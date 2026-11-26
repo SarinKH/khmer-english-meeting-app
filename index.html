@@ -1,0 +1,60 @@
+<!-- ... existing code ... -->
+                    <div class="relative flex items-center">
+                        <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..."
+                            class="w-full text-xs sm:text-sm font-mono bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-3 pr-10 py-2.5 outline-none">
+                        <button type="button" onclick="toggleApiKeyVisibility()"
+                            class="absolute right-3 text-slate-400 hover:text-slate-600 text-xs" title="Show/Hide API key">
+                            <i id="api-key-eye-icon" class="fa-regular fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+<!-- ... existing code ... -->
+    <script>
+        // =========================================================================
+        // 1. STATE MANAGEMENT & CONFIGURATION
+        // =========================================================================
+        const STORAGE_KEY_API = 'scribekh_gemini_api_key';
+        const STORAGE_KEY_MODEL = 'scribekh_gemini_model';
+        const AI_KEY_PLACEHOLDER = 'AIzaSy' + '...';
+// ... existing code ...
+        // =========================================================================
+        // 2. INITIALIZATION & SPEAKER UI RENDERING
+        // =========================================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            const keyInputEl = document.getElementById('gemini-api-key-input');
+            if (keyInputEl) keyInputEl.placeholder = AI_KEY_PLACEHOLDER;
+            renderSpeakerPills();
+            initWaveformIdle();
+            applyReportPreset();
+            updateAiEngineStatusUI();
+        });
+// ... existing code ...
+        async function testGeminiApiKey() {
+            const keyVal = document.getElementById('gemini-api-key-input').value.trim();
+            const modelVal = document.getElementById('gemini-model-select').value;
+            const feedback = document.getElementById('api-test-feedback');
+            const testBtn = document.getElementById('btn-test-api-key');
+
+            if (!keyVal) {
+                feedback.className = 'text-xs p-2.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800';
+                feedback.textContent = 'Please paste a Google AI Studio API key (starts with AIza) first.';
+                feedback.classList.remove('hidden');
+                return;
+            }
+// ... existing code ...
+            // Build Markdown tables and sections cleanly without inline literal ellipses
+            const tableHeader = ['| Metadata | Details |', '| :--- | :--- |'].join('\n');
+            const tableRows = [
+                `| **Date** | ${dateStr} |`,
+                `| **Location / Platform** | ${locationStr} |`,
+                `| **Leadership** | ${chairStr} |`,
+                `| **Duration** | ${durationStr} |`,
+                `| **Participants** | ${attendees} |`,
+                `| **Languages Captured** | Khmer (${khmerSegments.length} turns), English (${englishSegments.length} turns), Other Audio Clips (${audioSegments.length}) |`
+            ];
+            if (customPrompt) {
+                tableRows.push(`| **Custom Focus** | ${customPrompt} |`);
+            }
+
+            return `${headerTitle}\n\n${tableHeader}\n${tableRows.join('\n')}\n` +
+<!-- ... existing code ... -->
