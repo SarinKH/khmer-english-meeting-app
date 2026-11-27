@@ -1,4 +1,366 @@
-<!-- ... existing code ... -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScribeKH — Bilingual Meeting Transcription & Minutes (Khmer & English)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Kantumruy Pro (for crisp Khmer typography) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Kantumruy+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Kantumruy Pro', 'sans-serif'],
+                        khmer: ['Kantumruy Pro', 'Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col selection:bg-indigo-100 selection:text-indigo-900">
+
+    <!-- Top Application Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-sm">
+                    <i class="fa-solid fa-microphone-lines text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-base sm:text-lg font-bold text-slate-900 tracking-tight">ScribeKH Meeting Studio</h1>
+                        <span class="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            ខ្មែរ / EN Bilingual
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-500 hidden sm:block">Live Khmer & English Diarization • Voice Clip Translation • Executive Minutes</p>
+                </div>
+            </div>
+
+            <!-- Right Controls: AI Engine Status, Timer & Demo Trigger -->
+            <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <!-- Free Gemini API Settings Button -->
+                <button id="btn-ai-settings" onclick="openApiSettingsModal()"
+                    class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                    title="Configure Free Google AI Studio API Key">
+                    <span id="ai-status-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span id="ai-status-label">AI Engine: Browser Offline</span>
+                    <i class="fa-solid fa-gear text-slate-400 ml-0.5"></i>
+                </button>
+
+                <!-- Meeting Elapsed Timer -->
+                <div class="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl">
+                    <span id="live-status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                    <span id="meeting-timer" class="font-mono text-xs sm:text-sm font-semibold text-slate-700">00:00:00</span>
+                </div>
+
+                <!-- Demo Meeting Simulation Button -->
+                <button id="btn-demo" onclick="runDemoSimulation()"
+                    class="px-3 py-2 rounded-xl text-xs sm:text-sm font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-all flex items-center gap-1.5"
+                    title="Simulate a bilingual Khmer/English/French meeting with multiple speakers">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-600"></i>
+                    <span>Demo Simulation</span>
+                </button>
+
+                <!-- Clear Session Button -->
+                <button onclick="requestClearSession()"
+                    class="p-2 rounded-xl text-xs sm:text-sm font-medium bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 transition-all"
+                    title="Reset Meeting Session">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Non-blocking Notification Banner -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <!-- Main Workspace Grid -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+        <!-- LEFT COLUMN: Live Audio Control, Speaker Diarization & Transcript Feed (7 Cols on Desktop) -->
+        <section class="lg:col-span-7 flex flex-col gap-4">
+
+            <!-- Audio Capture & Language Control Card -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-wave-square text-indigo-600"></i>
+                            Live Meeting Capture & Language Mode
+                        </h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Embedded Khmer & English recognition with acoustic speaker turn detection</p>
+                    </div>
+
+                    <!-- Embedded Language Selector -->
+                    <div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 self-start sm:self-auto" role="group">
+                        <button type="button" id="lang-btn-km" onclick="setRecognitionLanguage('km-KH')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-indigo-700 shadow-xs">
+                            🇰🇭 ខ្មែរ (KM)
+                        </button>
+                        <button type="button" id="lang-btn-en" onclick="setRecognitionLanguage('en-US')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900">
+                            🇺🇸 English (EN)
+                        </button>
+                        <button type="button" id="lang-btn-auto" onclick="setRecognitionLanguage('auto')"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900"
+                            title="Alternates and detects Khmer & English turns automatically">
+                            🔄 Auto KM/EN
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Real-Time Audio Waveform Canvas -->
+                <div class="relative bg-slate-900 rounded-xl overflow-hidden h-16 mb-4 border border-slate-800 flex items-center justify-center">
+                    <canvas id="audio-visualizer" class="w-full h-full block"></canvas>
+                    <div id="visualizer-placeholder" class="absolute inset-0 flex items-center justify-center text-xs text-slate-400 gap-2 pointer-events-none">
+                        <i class="fa-solid fa-microphone-slash text-slate-500"></i>
+                        <span>Microphone idle — click "Start Live Capture" or "Demo Simulation"</span>
+                    </div>
+                </div>
+
+                <!-- Primary Recording & Foreign Language Controls -->
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <button id="btn-toggle-live" onclick="toggleLiveTranscription()"
+                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2">
+                        <i id="icon-toggle-live" class="fa-solid fa-microphone"></i>
+                        <span id="label-toggle-live">Start Live Capture</span>
+                    </button>
+
+                    <!-- Record Other Language Voice Clip -->
+                    <button id="btn-record-other" onclick="toggleOtherLanguageClip()"
+                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center justify-center gap-2"
+                        title="Record raw audio when someone speaks another language (e.g., French, Chinese, Thai, Japanese) so you can decide how to translate it to English">
+                        <i id="icon-record-other" class="fa-solid fa-record-vinyl text-emerald-600"></i>
+                        <span id="label-record-other">Record Other Language</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Speaker Diarization Control Bar -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Detected Voices / Speakers</span>
+                        <span id="auto-diarize-badge" class="px-2 py-0.5 text-[11px] font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            Auto-Diarization ON
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleSpeakerDirectoryModal()"
+                            class="text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors">
+                            <i class="fa-solid fa-id-badge"></i>
+                            <span>Assign Names</span>
+                        </button>
+                        <button onclick="addNewSpeaker()"
+                            class="text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Add Speaker</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Speaker Pills -->
+                <div id="speaker-pills-container" class="flex flex-wrap items-center gap-2">
+                    <!-- Populated dynamically by JS -->
+                </div>
+                <p class="text-[11px] text-slate-400 mt-2.5">
+                    <i class="fa-solid fa-circle-info mr-1"></i>
+                    Voices automatically cycle on speaker pauses, or tap a speaker badge above (or inside any transcript line) to reassign.
+                </p>
+            </div>
+
+            <!-- Live Transcript & Foreign Voice Clip Stream -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col flex-1 min-h-[420px] max-h-[650px] overflow-hidden">
+                <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-xs sm:text-sm font-bold text-slate-800">Live Transcript Timeline</h3>
+                        <span id="segment-count-badge" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-200 text-slate-700">0</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportTranscriptTxt()" class="text-xs text-slate-600 hover:text-indigo-600 font-medium px-2 py-1 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 transition-all">
+                            <i class="fa-solid fa-download mr-1"></i>Export .TXT
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Scrollable Transcript Feed -->
+                <div id="transcript-feed" class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <!-- Empty State -->
+                    <div id="empty-transcript-state" class="h-full flex flex-col items-center justify-center text-center py-12 px-4">
+                        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mb-3">
+                            <i class="fa-solid fa-comments text-xl"></i>
+                        </div>
+                        <h4 class="text-sm font-semibold text-slate-800">Ready to Transcribe Your Meeting</h4>
+                        <p class="text-xs text-slate-500 max-w-md mt-1 leading-relaxed">
+                            Click <strong class="text-indigo-600">Start Live Capture</strong> to transcribe Khmer (<span class="font-khmer">ភាសាខ្មែរ</span>) and English live, or click <strong class="text-emerald-700">Record Other Language</strong> to capture foreign speech clips for on-demand English translation.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Interim Live Speech Preview Bar -->
+                <div id="interim-bar" class="hidden px-4 py-2.5 bg-indigo-50/90 border-t border-indigo-100 flex items-center gap-2.5 text-xs text-indigo-900">
+                    <span class="flex h-2 w-2 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                    </span>
+                    <span id="interim-speaker-tag" class="font-bold shrink-0">Speaker A:</span>
+                    <span id="interim-text" class="italic truncate text-indigo-700 font-khmer">Listening...</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT COLUMN: Best-Practice Minutes of Meeting & Custom Report Builder (5 Cols on Desktop) -->
+        <section class="lg:col-span-5 flex flex-col gap-4">
+
+            <!-- Report Configuration & Custom Prompt Card -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-file-signature text-indigo-600"></i>
+                        Minutes of Meeting & Custom Report
+                    </h2>
+                    <span id="report-engine-pill" class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                        Local Structured Mode
+                    </span>
+                </div>
+
+                <!-- Meeting Metadata Inputs -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Meeting Title</label>
+                        <input type="text" id="meeting-title-input" placeholder="e.g., Q4 Regional Operations Sync"
+                            class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Report Format Preset</label>
+                        <select id="report-preset-select" onchange="applyReportPreset()"
+                            class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 outline-none transition-all">
+                            <option value="executive">Executive Best-Practice MoM</option>
+                            <option value="action">Action-Item & Decision Tracker</option>
+                            <option value="bilingual">Bilingual Summary (Khmer & English)</option>
+                            <option value="board">Formal Board / Governance Minutes</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Location / Platform</label>
+                        <input type="text" id="meeting-location-input" placeholder="e.g., Phnom Penh HQ / Zoom"
+                            class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase mb-1">Chairperson / Lead</label>
+                        <input type="text" id="meeting-chair-input" placeholder="e.g., Speaker A (Project Director)"
+                            class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 outline-none transition-all">
+                    </div>
+                </div>
+
+                <!-- Custom User Report Instructions -->
+                <div class="mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-[11px] font-semibold text-slate-500 uppercase">
+                            Custom Report Instructions (Optional)
+                        </label>
+                        <span class="text-[11px] text-slate-400">Tailor output to your needs</span>
+                    </div>
+                    <textarea id="custom-report-instructions" rows="2"
+                        placeholder="e.g., Highlight budget approvals, group action items by speaker, and include a Khmer executive summary at the top..."
+                        class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 outline-none transition-all resize-none"></textarea>
+                </div>
+
+                <!-- Generate Minutes Button -->
+                <button id="btn-generate-minutes" onclick="generateMinutesOfMeeting()"
+                    class="w-full py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold bg-slate-900 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2">
+                    <i id="icon-generate-minutes" class="fa-solid fa-sparkles text-amber-300"></i>
+                    <span id="label-generate-minutes">Generate Best-Practice Minutes & Summary</span>
+                </button>
+            </div>
+
+            <!-- Generated Minutes Output Card -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col flex-1 min-h-[420px] max-h-[650px] overflow-hidden">
+                <div class="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-xs sm:text-sm font-bold text-slate-800">Meeting Report Preview</h3>
+                        <span id="minutes-source-badge" class="hidden px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            Gemini AI
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="copyMinutesToClipboard()"
+                            class="px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all flex items-center gap-1"
+                            title="Copy formatted minutes">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>Copy</span>
+                        </button>
+                        <button onclick="downloadMinutesMarkdown()"
+                            class="px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all flex items-center gap-1"
+                            title="Download as Markdown (.md)">
+                            <i class="fa-solid fa-file-arrow-down"></i>
+                            <span>.MD</span>
+                        </button>
+                        <button onclick="printMinutesReport()"
+                            class="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1"
+                            title="Print or Save as PDF">
+                            <i class="fa-solid fa-print"></i>
+                            <span>Print / PDF</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editable & Formatted Minutes Container -->
+                <div id="minutes-output-container" class="flex-1 overflow-y-auto p-5 text-xs sm:text-sm leading-relaxed text-slate-700 space-y-4">
+                    <div class="h-full flex flex-col items-center justify-center text-center py-10 px-4 text-slate-400">
+                        <i class="fa-solid fa-clipboard-list text-3xl mb-3 text-slate-300"></i>
+                        <p class="text-xs sm:text-sm font-medium text-slate-600">No Minutes Generated Yet</p>
+                        <p class="text-xs text-slate-400 max-w-xs mt-1">
+                            Capture your meeting or run the Demo Simulation, then click <strong class="text-slate-600">Generate Best-Practice Minutes & Summary</strong>.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- MODAL 1: Free Google AI Studio API Key Settings -->
+    <div id="api-settings-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-5 sm:p-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Free Gemini AI Configuration</h3>
+                        <p class="text-xs text-slate-500">No Gemini Pro subscription required</p>
+                    </div>
+                </div>
+                <button onclick="closeApiSettingsModal()" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+            </div>
+
+            <div class="bg-blue-50/80 border border-blue-200 rounded-xl p-3 mb-4 text-xs text-blue-900 leading-relaxed">
+                <p class="font-semibold mb-1"><i class="fa-solid fa-circle-check text-blue-600 mr-1"></i>How to get a $0 Free API Key:</p>
+                <ol class="list-decimal list-inside space-y-0.5 text-blue-800">
+                    <li>Visit <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="underline font-semibold hover:text-blue-950">aistudio.google.com/apikey</a> and sign in with any Google account.</li>
+                    <li>Click <strong>Create API Key</strong> and paste it below.</li>
+                    <li>Your key is stored <strong>only in your local browser</strong> and powers audio clip translation and executive Minutes of Meeting.</li>
+                </ol>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Google AI Studio API Key</label>
                     <div class="relative flex items-center">
                         <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..."
                             class="w-full text-xs sm:text-sm font-mono bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-3 pr-10 py-2.5 outline-none">
@@ -8,7 +370,79 @@
                         </button>
                     </div>
                 </div>
-<!-- ... existing code ... -->
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Gemini Model (Free Tier Supported)</label>
+                    <select id="gemini-model-select"
+                        class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2.5 outline-none">
+                        <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recommended — Fast Multimodal Audio & MoM)</option>
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Ultra-Light Free Tier)</option>
+                    </select>
+                </div>
+
+                <!-- Test Connection Result Banner -->
+                <div id="api-test-feedback" class="hidden text-xs p-2.5 rounded-xl border"></div>
+            </div>
+
+            <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onclick="clearSavedApiKey()"
+                    class="px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all">
+                    Remove Key
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btn-test-api-key" onclick="testGeminiApiKey()"
+                        class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 transition-all flex items-center gap-1.5">
+                        <i class="fa-solid fa-plug-circle-check text-indigo-600"></i>
+                        <span>Test Key</span>
+                    </button>
+                    <button type="button" onclick="saveApiSettings()"
+                        class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all">
+                        Save Configuration
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: Speaker Directory (Map Speaker A, B, C to Real Names if desired) -->
+    <div id="speaker-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-slate-900">Speaker Voice Directory</h3>
+                <button onclick="toggleSpeakerDirectoryModal()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">
+                Voices are automatically labeled <strong>Speaker A, Speaker B, Speaker C...</strong> You can optionally add participant names or roles for the final Minutes of Meeting.
+            </p>
+            <div id="speaker-directory-list" class="space-y-2.5 max-h-64 overflow-y-auto mb-4">
+                <!-- Populated by JS -->
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="toggleSpeakerDirectoryModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: Confirm Session Reset -->
+    <div id="confirm-reset-modal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full p-5">
+            <h3 class="text-sm font-bold text-slate-900 mb-1">Reset Current Meeting Session?</h3>
+            <p class="text-xs text-slate-500 mb-4">This will clear all live transcript segments, recorded voice clips, and generated minutes.</p>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeResetModal()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700">
+                    Cancel
+                </button>
+                <button onclick="confirmClearSession()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white">
+                    Clear Everything
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // =========================================================================
         // 1. STATE MANAGEMENT & CONFIGURATION
@@ -16,7 +450,41 @@
         const STORAGE_KEY_API = 'scribekh_gemini_api_key';
         const STORAGE_KEY_MODEL = 'scribekh_gemini_model';
         const AI_KEY_PLACEHOLDER = 'AIzaSy' + '...';
-// ... existing code ...
+
+        const SPEAKER_PALETTE = [
+            { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200', dot: 'bg-indigo-600' },
+            { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-600' },
+            { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200', dot: 'bg-amber-600' },
+            { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-200', dot: 'bg-rose-600' },
+            { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200', dot: 'bg-purple-600' },
+            { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200', dot: 'bg-cyan-600' }
+        ];
+
+        const state = {
+            isLive: false,
+            recognitionLang: 'km-KH', // 'km-KH', 'en-US', or 'auto'
+            autoLangToggle: 'km-KH',
+            speakers: [
+                { id: 'Speaker A', alias: '', colorIdx: 0 },
+                { id: 'Speaker B', alias: '', colorIdx: 1 }
+            ],
+            activeSpeakerId: 'Speaker A',
+            lastSpeechTimestamp: 0,
+            segments: [], // { id, type: 'text'|'audio', speakerId, lang, text, translation, audioUrl, audioBlob, audioMimeType, timestamp, rawTimeSec }
+            meetingSeconds: 0,
+            timerInterval: null,
+            recognition: null,
+            audioCtx: null,
+            analyser: null,
+            micStream: null,
+            animationFrameId: null,
+            isRecordingOtherLang: false,
+            mediaRecorder: null,
+            otherAudioChunks: [],
+            otherRecordingMimeType: 'audio/webm',
+            latestMinutesMarkdown: ''
+        };
+
         // =========================================================================
         // 2. INITIALIZATION & SPEAKER UI RENDERING
         // =========================================================================
@@ -28,7 +496,87 @@
             applyReportPreset();
             updateAiEngineStatusUI();
         });
-// ... existing code ...
+
+        function getGeminiConfig() {
+            const apiKey = (localStorage.getItem(STORAGE_KEY_API) || '').trim();
+            const model = localStorage.getItem(STORAGE_KEY_MODEL) || 'gemini-3.8-flash';
+            return { apiKey, model, isConfigured: apiKey.length > 10 };
+        }
+
+        function updateAiEngineStatusUI() {
+            const { isConfigured, model } = getGeminiConfig();
+            const btn = document.getElementById('btn-ai-settings');
+            const dot = document.getElementById('ai-status-dot');
+            const label = document.getElementById('ai-status-label');
+            const reportPill = document.getElementById('report-engine-pill');
+
+            if (isConfigured) {
+                btn.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200';
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+                label.textContent = `AI Engine: ${model === 'gemini-3.5-flash-lite' ? 'Gemini 3.5 Lite' : 'Gemini 3.8 Flash'}`;
+                if (reportPill) {
+                    reportPill.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200';
+                    reportPill.textContent = 'Gemini AI Enabled';
+                }
+            } else {
+                btn.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200';
+                dot.className = 'w-2 h-2 rounded-full bg-slate-400';
+                label.textContent = 'AI Engine: Browser Offline';
+                if (reportPill) {
+                    reportPill.className = 'text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
+                    reportPill.textContent = 'Local Structured Mode';
+                }
+            }
+        }
+
+        function openApiSettingsModal() {
+            const { apiKey, model } = getGeminiConfig();
+            document.getElementById('gemini-api-key-input').value = apiKey;
+            document.getElementById('gemini-model-select').value = model;
+            document.getElementById('api-test-feedback').classList.add('hidden');
+            document.getElementById('api-settings-modal').classList.remove('hidden');
+        }
+
+        function closeApiSettingsModal() {
+            document.getElementById('api-settings-modal').classList.add('hidden');
+        }
+
+        function toggleApiKeyVisibility() {
+            const input = document.getElementById('gemini-api-key-input');
+            const icon = document.getElementById('api-key-eye-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.className = 'fa-regular fa-eye-slash';
+            } else {
+                input.type = 'password';
+                icon.className = 'fa-regular fa-eye';
+            }
+        }
+
+        function saveApiSettings() {
+            const keyVal = document.getElementById('gemini-api-key-input').value.trim();
+            const modelVal = document.getElementById('gemini-model-select').value;
+
+            if (keyVal) {
+                localStorage.setItem(STORAGE_KEY_API, keyVal);
+            } else {
+                localStorage.removeItem(STORAGE_KEY_API);
+            }
+            localStorage.setItem(STORAGE_KEY_MODEL, modelVal);
+
+            updateAiEngineStatusUI();
+            closeApiSettingsModal();
+            showToast(keyVal ? 'Gemini AI configuration saved to your browser!' : 'Switched to Browser Offline mode.', 'success');
+        }
+
+        function clearSavedApiKey() {
+            localStorage.removeItem(STORAGE_KEY_API);
+            document.getElementById('gemini-api-key-input').value = '';
+            document.getElementById('api-test-feedback').classList.add('hidden');
+            updateAiEngineStatusUI();
+            showToast('API key removed from local browser storage.', 'info');
+        }
+
         async function testGeminiApiKey() {
             const keyVal = document.getElementById('gemini-api-key-input').value.trim();
             const modelVal = document.getElementById('gemini-model-select').value;
@@ -41,8 +589,825 @@
                 feedback.classList.remove('hidden');
                 return;
             }
-// ... existing code ...
-            // Build Markdown tables and sections cleanly without inline literal ellipses
+
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Testing...</span>';
+            feedback.classList.add('hidden');
+
+            try {
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelVal)}:generateContent?key=${encodeURIComponent(keyVal)}`;
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: 'Reply with exactly: OK' }] }]
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data?.error?.message || `HTTP ${response.status}`);
+                }
+
+                feedback.className = 'text-xs p-2.5 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-800';
+                feedback.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i><strong>Connected!</strong> Your free Google AI Studio key works with <code>${escapeHtml(modelVal)}</code>.`;
+                feedback.classList.remove('hidden');
+            } catch (err) {
+                feedback.className = 'text-xs p-2.5 rounded-xl border bg-rose-50 border-rose-200 text-rose-800';
+                feedback.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i><strong>Connection Failed:</strong> ${escapeHtml(err.message)}`;
+                feedback.classList.remove('hidden');
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<i class="fa-solid fa-plug-circle-check text-indigo-600"></i><span>Test Key</span>';
+            }
+        }
+
+        function getSpeakerDisplay(speakerId) {
+            const sp = state.speakers.find(s => s.id === speakerId) || state.speakers[0];
+            const palette = SPEAKER_PALETTE[sp.colorIdx % SPEAKER_PALETTE.length];
+            const label = sp.alias ? `${sp.id} (${sp.alias})` : sp.id;
+            return { ...sp, palette, label };
+        }
+
+        function renderSpeakerPills() {
+            const container = document.getElementById('speaker-pills-container');
+            container.innerHTML = '';
+
+            state.speakers.forEach(sp => {
+                const palette = SPEAKER_PALETTE[sp.colorIdx % SPEAKER_PALETTE.length];
+                const isActive = state.activeSpeakerId === sp.id;
+                const displayName = sp.alias ? `${sp.id} · ${sp.alias}` : sp.id;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.onclick = () => selectActiveSpeaker(sp.id);
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${
+                    isActive
+                        ? `${palette.bg} ${palette.text} ${palette.border} ring-2 ring-offset-1 ring-indigo-500 shadow-xs`
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`;
+                btn.innerHTML = `
+                    <span class="w-2 h-2 rounded-full ${palette.dot}"></span>
+                    <span>${escapeHtml(displayName)}</span>
+                    ${isActive ? '<span class="text-[10px] uppercase tracking-wider opacity-75">(Speaking)</span>' : ''}
+                `;
+                container.appendChild(btn);
+            });
+        }
+
+        function selectActiveSpeaker(speakerId) {
+            state.activeSpeakerId = speakerId;
+            renderSpeakerPills();
+            updateInterimSpeakerTag();
+        }
+
+        function addNewSpeaker() {
+            const nextLetter = String.fromCharCode(65 + state.speakers.length); // A, B, C, D...
+            const newId = `Speaker ${nextLetter}`;
+            state.speakers.push({
+                id: newId,
+                alias: '',
+                colorIdx: state.speakers.length
+            });
+            state.activeSpeakerId = newId;
+            renderSpeakerPills();
+            renderSpeakerDirectory();
+            showToast(`Added ${newId} and set as active voice`, 'info');
+        }
+
+        function toggleSpeakerDirectoryModal() {
+            const modal = document.getElementById('speaker-modal');
+            modal.classList.toggle('hidden');
+            if (!modal.classList.contains('hidden')) {
+                renderSpeakerDirectory();
+            }
+        }
+
+        function renderSpeakerDirectory() {
+            const list = document.getElementById('speaker-directory-list');
+            list.innerHTML = '';
+            state.speakers.forEach((sp, idx) => {
+                const palette = SPEAKER_PALETTE[sp.colorIdx % SPEAKER_PALETTE.length];
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200';
+                row.innerHTML = `
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${palette.bg} ${palette.text} shrink-0">${sp.id}</span>
+                    <input type="text" value="${escapeHtml(sp.alias)}" placeholder="Optional name/role (e.g., Sokha - Finance)"
+                        oninput="updateSpeakerAlias(${idx}, this.value)"
+                        class="flex-1 text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500">
+                `;
+                list.appendChild(row);
+            });
+        }
+
+        function updateSpeakerAlias(index, val) {
+            state.speakers[index].alias = val.trim();
+            renderSpeakerPills();
+            renderTranscriptFeed();
+        }
+
+        // =========================================================================
+        // 3. LANGUAGE MODE & LIVE SPEECH RECOGNITION (KHMER & ENGLISH)
+        // =========================================================================
+        function setRecognitionLanguage(lang) {
+            state.recognitionLang = lang;
+            ['km', 'en', 'auto'].forEach(key => {
+                const btn = document.getElementById(`lang-btn-${key}`);
+                const match = (key === 'km' && lang === 'km-KH') ||
+                              (key === 'en' && lang === 'en-US') ||
+                              (key === 'auto' && lang === 'auto');
+                btn.className = match
+                    ? 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white text-indigo-700 shadow-xs'
+                    : 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900';
+            });
+
+            if (state.isLive && state.recognition) {
+                try { state.recognition.stop(); } catch (e) {}
+            }
+            const labelMap = { 'km-KH': 'Khmer (ភាសាខ្មែរ)', 'en-US': 'English (US)', 'auto': 'Auto Khmer/English' };
+            showToast(`Speech recognition switched to ${labelMap[lang]}`, 'info');
+        }
+
+        async function toggleLiveTranscription() {
+            if (state.isLive) {
+                stopLiveTranscription();
+            } else {
+                await startLiveTranscription();
+            }
+        }
+
+        async function startLiveTranscription() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                showToast('Live Speech API requires Chrome or Edge. Try "Demo Simulation" to test all features!', 'error');
+                return;
+            }
+
+            try {
+                state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                startWaveformVisualizer(state.micStream);
+            } catch (err) {
+                showToast('Microphone permission denied or unavailable. Please allow microphone access.', 'error');
+                return;
+            }
+
+            state.isLive = true;
+            state.lastSpeechTimestamp = Date.now();
+            startMeetingTimer();
+            updateLiveButtonUI(true);
+
+            const recognition = new SpeechRecognition();
+            state.recognition = recognition;
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                document.getElementById('interim-bar').classList.remove('hidden');
+                updateInterimSpeakerTag();
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                const now = Date.now();
+
+                // Acoustic Turn Diarization Heuristic:
+                // If there was a >2.6s pause between utterances, automatically cycle speaker turn
+                if (state.lastSpeechTimestamp && (now - state.lastSpeechTimestamp > 2600) && state.segments.length > 0) {
+                    cycleNextSpeakerTurn();
+                }
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        const cleanText = transcript.trim();
+                        if (cleanText) {
+                            const detectedLang = detectKhmerOrEnglish(cleanText);
+                            addTranscriptSegment({
+                                type: 'text',
+                                speakerId: state.activeSpeakerId,
+                                lang: detectedLang,
+                                text: cleanText
+                            });
+                            state.lastSpeechTimestamp = Date.now();
+                        }
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                const interimEl = document.getElementById('interim-text');
+                if (interimEl) {
+                    interimEl.textContent = interimTranscript || 'Listening...';
+                }
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error === 'no-speech') return;
+                if (event.error === 'not-allowed') {
+                    showToast('Microphone access blocked by browser.', 'error');
+                    stopLiveTranscription();
+                }
+            };
+
+            recognition.onend = () => {
+                if (state.isLive) {
+                    // Alternate language if Auto KM/EN is enabled
+                    if (state.recognitionLang === 'auto') {
+                        state.autoLangToggle = state.autoLangToggle === 'km-KH' ? 'en-US' : 'km-KH';
+                        recognition.lang = state.autoLangToggle;
+                    } else {
+                        recognition.lang = state.recognitionLang;
+                    }
+                    try { recognition.start(); } catch (e) {}
+                } else {
+                    document.getElementById('interim-bar').classList.add('hidden');
+                }
+            };
+
+            recognition.lang = state.recognitionLang === 'auto' ? state.autoLangToggle : state.recognitionLang;
+            recognition.start();
+        }
+
+        function stopLiveTranscription() {
+            state.isLive = false;
+            if (state.recognition) {
+                try { state.recognition.stop(); } catch (e) {}
+                state.recognition = null;
+            }
+            if (state.micStream) {
+                state.micStream.getTracks().forEach(t => t.stop());
+                state.micStream = null;
+            }
+            stopWaveformVisualizer();
+            stopMeetingTimer();
+            updateLiveButtonUI(false);
+            document.getElementById('interim-bar').classList.add('hidden');
+        }
+
+        function updateLiveButtonUI(isLive) {
+            const btn = document.getElementById('btn-toggle-live');
+            const icon = document.getElementById('icon-toggle-live');
+            const label = document.getElementById('label-toggle-live');
+            const dot = document.getElementById('live-status-dot');
+
+            if (isLive) {
+                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all flex items-center justify-center gap-2';
+                icon.className = 'fa-solid fa-stop';
+                label.textContent = 'Stop Live Capture';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping';
+            } else {
+                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2';
+                icon.className = 'fa-solid fa-microphone';
+                label.textContent = 'Start Live Capture';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+            }
+        }
+
+        function cycleNextSpeakerTurn() {
+            const currentIdx = state.speakers.findIndex(s => s.id === state.activeSpeakerId);
+            const nextIdx = (currentIdx + 1) % state.speakers.length;
+            selectActiveSpeaker(state.speakers[nextIdx].id);
+        }
+
+        function updateInterimSpeakerTag() {
+            const el = document.getElementById('interim-speaker-tag');
+            if (el) el.textContent = `${getSpeakerDisplay(state.activeSpeakerId).label}:`;
+        }
+
+        function detectKhmerOrEnglish(text) {
+            // Unicode block U+1780 to U+17FF is Khmer script
+            const khmerRegex = /[\u1780-\u17FF]/;
+            return khmerRegex.test(text) ? 'Khmer' : 'English';
+        }
+
+        // =========================================================================
+        // 4. OTHER-LANGUAGE VOICE CLIP RECORDING & GEMINI / ON-DEMAND TRANSLATION
+        // =========================================================================
+        async function toggleOtherLanguageClip() {
+            if (state.isRecordingOtherLang) {
+                stopOtherLanguageClip();
+            } else {
+                await startOtherLanguageClip();
+            }
+        }
+
+        async function startOtherLanguageClip() {
+            try {
+                const stream = state.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+                if (!state.micStream) {
+                    startWaveformVisualizer(stream);
+                    state._tempOtherStream = stream;
+                }
+
+                state.otherAudioChunks = [];
+                const preferredMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+
+                const recorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
+                state.otherRecordingMimeType = recorder.mimeType || 'audio/webm';
+                state.mediaRecorder = recorder;
+
+                recorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) state.otherAudioChunks.push(e.data);
+                };
+
+                recorder.onstop = () => {
+                    const cleanMime = (state.otherRecordingMimeType || 'audio/webm').split(';')[0];
+                    const audioBlob = new Blob(state.otherAudioChunks, { type: cleanMime });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+
+                    addTranscriptSegment({
+                        type: 'audio',
+                        speakerId: state.activeSpeakerId,
+                        lang: 'Other Language (Voice Clip)',
+                        audioUrl,
+                        audioBlob,
+                        audioMimeType: cleanMime,
+                        detectedLanguage: 'Auto-Detect',
+                        translation: ''
+                    });
+
+                    if (state._tempOtherStream) {
+                        state._tempOtherStream.getTracks().forEach(t => t.stop());
+                        state._tempOtherStream = null;
+                        stopWaveformVisualizer();
+                    }
+                    showToast('Other-language voice clip saved. Choose how to translate it in the timeline.', 'success');
+                };
+
+                recorder.start();
+                state.isRecordingOtherLang = true;
+                startMeetingTimer();
+
+                const btn = document.getElementById('btn-record-other');
+                const label = document.getElementById('label-record-other');
+                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all flex items-center justify-center gap-2 animate-pulse';
+                label.textContent = 'Stop Voice Clip';
+            } catch (err) {
+                showToast('Could not access microphone for voice clip recording.', 'error');
+            }
+        }
+
+        function stopOtherLanguageClip() {
+            if (state.mediaRecorder && state.isRecordingOtherLang) {
+                state.mediaRecorder.stop();
+            }
+            state.isRecordingOtherLang = false;
+            if (!state.isLive) stopMeetingTimer();
+
+            const btn = document.getElementById('btn-record-other');
+            const label = document.getElementById('label-record-other');
+            btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center justify-center gap-2';
+            label.textContent = 'Record Other Language';
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const dataUrl = reader.result || '';
+                    const base64 = dataUrl.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        // User decides how to translate a recorded foreign-language voice clip into English
+        async function translateVoiceClipToEnglish(segmentId) {
+            const seg = state.segments.find(s => s.id === segmentId);
+            if (!seg) return;
+
+            const langSelect = document.getElementById(`clip-lang-${segmentId}`);
+            const chosenLang = langSelect ? langSelect.value : 'Auto-Detect';
+            const btn = document.getElementById(`btn-translate-${segmentId}`);
+            const { apiKey, model, isConfigured } = getGeminiConfig();
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Translating...';
+            }
+
+            // CASE A: Demo clip with sample simulated audio
+            if (seg.isDemoClip) {
+                setTimeout(() => {
+                    seg.detectedLanguage = chosenLang === 'Auto-Detect' ? 'French (Français)' : chosenLang;
+                    seg.translation = `[English Translation from ${seg.detectedLanguage}]: "Our regional logistics partner in Phnom Penh has confirmed the shipment schedule for next Tuesday, and all customs documents are ready."`;
+                    renderTranscriptFeed();
+                    showToast(`Translated ${seg.detectedLanguage} voice clip to English!`, 'success');
+                }, 450);
+                return;
+            }
+
+            // CASE B: Real recorded audio Blob + Free Gemini API key configured
+            if (seg.audioBlob && isConfigured) {
+                try {
+                    const base64Audio = await blobToBase64(seg.audioBlob);
+                    const langInstruction = chosenLang === 'Auto-Detect'
+                        ? 'Detect the spoken language automatically.'
+                        : `The speaker is speaking ${chosenLang}.`;
+
+                    const prompt = `${langInstruction} Transcribe what is spoken in this meeting audio clip and provide an accurate, natural English translation. Format clearly as:\n[Detected Language: <Language>]\nOriginal: "<original transcript>"\nEnglish Translation: "<clear English translation>"`;
+
+                    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: prompt },
+                                    {
+                                        inline_data: {
+                                            mime_type: seg.audioMimeType || 'audio/webm',
+                                            data: base64Audio
+                                        }
+                                    }
+                                ]
+                            }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data?.error?.message || `API Error (${response.status})`);
+                    }
+
+                    const aiReply = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n').trim();
+                    if (!aiReply) throw new Error('No translation returned by Gemini.');
+
+                    seg.detectedLanguage = chosenLang;
+                    seg.translation = aiReply;
+                    renderTranscriptFeed();
+                    showToast('Voice clip transcribed & translated to English via Gemini!', 'success');
+                } catch (err) {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fa-solid fa-language mr-1"></i>Translate Voice to English';
+                    }
+                    showToast(`Gemini Audio Translation Error: ${err.message}`, 'error');
+                }
+                return;
+            }
+
+            // CASE C: No API key configured yet — guide user or let them enter manual translation
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-language mr-1"></i>Translate Voice to English';
+            }
+            seg.showManualInput = true;
+            renderTranscriptFeed();
+            showToast('Tip: Add a free Google AI Studio key in "AI Engine" for automatic voice translation, or type your translation below.', 'info');
+        }
+
+        function saveManualClipTranslation(segmentId) {
+            const seg = state.segments.find(s => s.id === segmentId);
+            const input = document.getElementById(`manual-trans-input-${segmentId}`);
+            const langSelect = document.getElementById(`clip-lang-${segmentId}`);
+            if (!seg || !input) return;
+
+            const textVal = input.value.trim();
+            if (!textVal) {
+                showToast('Please enter an English translation note first.', 'error');
+                return;
+            }
+            seg.detectedLanguage = langSelect ? langSelect.value : 'Other Language';
+            seg.translation = `[English Translation (${seg.detectedLanguage})]: "${textVal}"`;
+            seg.showManualInput = false;
+            renderTranscriptFeed();
+            showToast('English translation saved to transcript!', 'success');
+        }
+
+        // =========================================================================
+        // 5. TRANSCRIPT STREAM RENDERING & INLINE EDITING
+        // =========================================================================
+        function addTranscriptSegment(payload) {
+            const segment = {
+                id: 'seg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                timestamp: formatSeconds(state.meetingSeconds),
+                rawTimeSec: state.meetingSeconds,
+                ...payload
+            };
+            state.segments.push(segment);
+            renderTranscriptFeed();
+        }
+
+        function reassignSegmentSpeaker(segmentId) {
+            const seg = state.segments.find(s => s.id === segmentId);
+            if (!seg) return;
+            const currentIdx = state.speakers.findIndex(s => s.id === seg.speakerId);
+            const nextIdx = (currentIdx + 1) % state.speakers.length;
+            seg.speakerId = state.speakers[nextIdx].id;
+            renderTranscriptFeed();
+        }
+
+        function updateSegmentText(segmentId, newText) {
+            const seg = state.segments.find(s => s.id === segmentId);
+            if (!seg) return;
+            seg.text = newText.trim();
+            seg.lang = detectKhmerOrEnglish(seg.text);
+        }
+
+        function deleteSegment(segmentId) {
+            state.segments = state.segments.filter(s => s.id !== segmentId);
+            renderTranscriptFeed();
+        }
+
+        function renderTranscriptFeed() {
+            const feed = document.getElementById('transcript-feed');
+            const countBadge = document.getElementById('segment-count-badge');
+            countBadge.textContent = state.segments.length;
+
+            if (state.segments.length === 0) {
+                feed.innerHTML = `
+                    <div id="empty-transcript-state" class="h-full flex flex-col items-center justify-center text-center py-12 px-4">
+                        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mb-3">
+                            <i class="fa-solid fa-comments text-xl"></i>
+                        </div>
+                        <h4 class="text-sm font-semibold text-slate-800">Ready to Transcribe Your Meeting</h4>
+                        <p class="text-xs text-slate-500 max-w-md mt-1 leading-relaxed">
+                            Click <strong class="text-indigo-600">Start Live Capture</strong> to transcribe Khmer (<span class="font-khmer">ភាសាខ្មែរ</span>) and English live, or click <strong class="text-emerald-700">Record Other Language</strong> to capture foreign speech clips for on-demand English translation.
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            feed.innerHTML = '';
+            const { isConfigured } = getGeminiConfig();
+
+            state.segments.forEach(seg => {
+                const spInfo = getSpeakerDisplay(seg.speakerId);
+                const card = document.createElement('div');
+                card.className = 'p-3.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:bg-white transition-all group';
+
+                const langBadgeClass = seg.lang === 'Khmer'
+                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                    : (seg.lang === 'English' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200');
+
+                let bodyHtml = '';
+                if (seg.type === 'text') {
+                    bodyHtml = `
+                        <p contenteditable="true"
+                           onblur="updateSegmentText('${seg.id}', this.innerText)"
+                           title="Click to edit text inline"
+                           class="text-xs sm:text-sm text-slate-800 mt-1.5 leading-relaxed font-khmer outline-none focus:bg-indigo-50/50 rounded-md px-1 -mx-1">${escapeHtml(seg.text)}</p>
+                    `;
+                } else {
+                    // Recorded Audio Clip for Other Language with User-Controlled Translation Decision
+                    bodyHtml = `
+                        <div class="mt-2 p-3 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-2.5">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="text-xs font-semibold text-emerald-900 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-volume-high text-emerald-600"></i>
+                                    Recorded Non-Khmer/English Voice Clip
+                                </span>
+                                ${seg.audioUrl
+                                    ? `<audio controls src="${seg.audioUrl}" class="h-8 max-w-[220px]"></audio>`
+                                    : `<span class="text-[11px] italic text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200">Sample Foreign Audio Clip (00:06)</span>`
+                                }
+                            </div>
+
+                            ${seg.translation ? `
+                                <div class="p-2.5 rounded-lg bg-white border border-emerald-200 text-xs text-slate-800 whitespace-pre-line">
+                                    <div class="font-semibold text-emerald-700 mb-0.5 flex items-center gap-1">
+                                        <i class="fa-solid fa-language"></i> English Translation Output
+                                    </div>
+                                    ${escapeHtml(seg.translation)}
+                                </div>
+                            ` : `
+                                <div class="flex flex-wrap items-center gap-2 pt-1">
+                                    <select id="clip-lang-${seg.id}" class="text-xs bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5 text-slate-700 outline-none">
+                                        <option value="Auto-Detect">Auto-Detect Language</option>
+                                        <option value="French (Français)">French (Français)</option>
+                                        <option value="Chinese (Mandarin)">Chinese (中文)</option>
+                                        <option value="Thai (ภาษาไทย)">Thai (ภาษาไทย)</option>
+                                        <option value="Vietnamese (Tiếng Việt)">Vietnamese (Tiếng Việt)</option>
+                                        <option value="Japanese (日本語)">Japanese (日本語)</option>
+                                        <option value="Korean (한국어)">Korean (한국어)</option>
+                                    </select>
+                                    <button id="btn-translate-${seg.id}" onclick="translateVoiceClipToEnglish('${seg.id}')"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center gap-1.5">
+                                        <i class="fa-solid fa-language"></i>
+                                        <span>${isConfigured ? 'Translate Voice to English (AI)' : 'Translate Voice to English'}</span>
+                                    </button>
+                                </div>
+                            `}
+
+                            ${seg.showManualInput && !seg.translation ? `
+                                <div class="pt-2 border-t border-emerald-200/80 space-y-2">
+                                    <div class="flex items-center justify-between text-[11px] text-emerald-900">
+                                        <span>No API key set — enter manual English translation or <button type="button" onclick="openApiSettingsModal()" class="underline font-semibold text-indigo-700">add a free Gemini key</button>:</span>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="manual-trans-input-${seg.id}" placeholder="Type English translation of this voice clip..."
+                                            class="flex-1 text-xs bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5 outline-none">
+                                        <button type="button" onclick="saveManualClipTranslation('${seg.id}')"
+                                            class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white">
+                                            Save
+                                        </button>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button onclick="reassignSegmentSpeaker('${seg.id}')"
+                                title="Click to cycle speaker assignment"
+                                class="px-2.5 py-0.5 rounded-lg text-xs font-bold border ${spInfo.palette.bg} ${spInfo.palette.text} ${spInfo.palette.border} hover:opacity-85 transition-opacity">
+                                ${escapeHtml(spInfo.label)}
+                            </button>
+                            <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold border ${langBadgeClass}">
+                                ${escapeHtml(seg.lang)}
+                            </span>
+                            <span class="text-[11px] font-mono text-slate-400">${seg.timestamp}</span>
+                        </div>
+                        <button onclick="deleteSegment('${seg.id}')"
+                            class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 text-xs p-1 transition-opacity"
+                            title="Remove entry">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                    ${bodyHtml}
+                `;
+                feed.appendChild(card);
+            });
+
+            feed.scrollTop = feed.scrollHeight;
+        }
+
+        // =========================================================================
+        // 6. BEST-PRACTICE MINUTES OF MEETING & CUSTOM REPORT GENERATOR
+        // =========================================================================
+        function applyReportPreset() {
+            const preset = document.getElementById('report-preset-select').value;
+            const customInput = document.getElementById('custom-report-instructions');
+            const placeholders = {
+                executive: 'e.g., Focus on strategic decisions, risks, and clear ownership per speaker...',
+                action: 'e.g., Extract every task, owner (Speaker A/B), and deadline into a structured table...',
+                bilingual: 'e.g., Provide Executive Summary and Key Decisions in both English and Khmer (ភាសាខ្មែរ)...',
+                board: 'e.g., Use formal corporate governance tone with motions, approvals, and formal resolutions...'
+            };
+            customInput.placeholder = placeholders[preset] || placeholders.executive;
+        }
+
+        async function generateMinutesOfMeeting() {
+            if (state.segments.length === 0) {
+                showToast('Please capture live speech or run "Demo Simulation" first!', 'error');
+                return;
+            }
+
+            const title = document.getElementById('meeting-title-input').value.trim() || 'Bilingual Operations & Project Alignment Meeting';
+            const locationStr = document.getElementById('meeting-location-input').value.trim() || 'Hybrid / Conference Room';
+            const chairStr = document.getElementById('meeting-chair-input').value.trim() || getSpeakerDisplay('Speaker A').label;
+            const preset = document.getElementById('report-preset-select').value;
+            const customPrompt = document.getElementById('custom-report-instructions').value.trim();
+            const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            const durationStr = formatSeconds(state.meetingSeconds);
+
+            const attendees = state.speakers.map(s => s.alias ? `${s.id} (${s.alias})` : s.id).join(', ');
+            const { apiKey, model, isConfigured } = getGeminiConfig();
+
+            const btn = document.getElementById('btn-generate-minutes');
+            const icon = document.getElementById('icon-generate-minutes');
+            const label = document.getElementById('label-generate-minutes');
+            const sourceBadge = document.getElementById('minutes-source-badge');
+
+            btn.disabled = true;
+            icon.className = 'fa-solid fa-spinner fa-spin text-amber-300';
+            label.textContent = isConfigured ? 'Generating AI Minutes via Gemini...' : 'Synthesizing Best-Practice Minutes...';
+
+            // Build structured transcript log for AI or Local synthesis
+            const transcriptLog = state.segments.map(seg => {
+                const spLabel = getSpeakerDisplay(seg.speakerId).label;
+                if (seg.type === 'text') {
+                    return `[${seg.timestamp}] ${spLabel} (${seg.lang}): ${seg.text}`;
+                } else {
+                    const transNote = seg.translation ? seg.translation : 'Foreign language audio clip (pending translation)';
+                    return `[${seg.timestamp}] ${spLabel} (Voice Clip): ${transNote}`;
+                }
+            }).join('\n');
+
+            if (isConfigured) {
+                try {
+                    const presetGuidance = {
+                        executive: 'Produce an Executive Best-Practice Minutes of Meeting (MoM) with: Metadata Table, Executive Summary, Key Discussion Points (attributed by speaker), Formal Decisions Made, and an Action Items Markdown Table (Task, Owner, Target Timeline, Status).',
+                        action: 'Produce an Action-Item & Decision Tracker Minutes of Meeting focused heavily on concrete deliverables, owners (Speaker A/B/etc.), deadlines, dependencies, and formal decisions.',
+                        bilingual: 'Produce a Bilingual Minutes of Meeting (English & Khmer / ភាសាខ្មែរ). Write the Executive Summary, Key Decisions, and Action Items clearly in English followed by accurate natural Khmer (ភាសាខ្មែរ) translations.',
+                        board: 'Produce Formal Corporate Board / Governance Minutes with Call to Order, Quorum/Attendees, Agenda Deliberations, Formal Resolutions Passed, and Adjournment.'
+                    }[preset];
+
+                    const systemPrompt = `You are an expert executive corporate secretary fluent in Khmer (ភាសាខ្មែរ) and English.
+Generate high-standard, best-practice Minutes of Meeting (MoM) in clean Markdown based strictly on the provided bilingual meeting transcript.
+
+Meeting Metadata:
+- Title: ${title}
+- Date: ${dateStr}
+- Location / Platform: ${locationStr}
+- Chairperson / Lead: ${chairStr}
+- Duration: ${durationStr}
+- Participants: ${attendees}
+
+Format Requirement:
+${presetGuidance}
+${customPrompt ? `\nUser's Custom Report Requirements (MUST FOLLOW):\n${customPrompt}` : ''}
+
+Transcript:
+${transcriptLog}`;
+
+                    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: systemPrompt }] }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data?.error?.message || `API Error (${response.status})`);
+                    }
+
+                    const aiMarkdown = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n').trim();
+                    if (!aiMarkdown) throw new Error('Empty response received from Gemini.');
+
+                    state.latestMinutesMarkdown = aiMarkdown;
+                    renderMarkdownMinutes(aiMarkdown);
+                    sourceBadge.textContent = `${model}`;
+                    sourceBadge.classList.remove('hidden');
+                    showToast('AI Minutes of Meeting generated with Gemini!', 'success');
+                } catch (err) {
+                    showToast(`Gemini API error (${err.message}). Falling back to local report generator.`, 'error');
+                    const fallbackMd = buildLocalStructuredMinutes({ title, locationStr, chairStr, preset, customPrompt, dateStr, durationStr, attendees });
+                    state.latestMinutesMarkdown = fallbackMd;
+                    renderMarkdownMinutes(fallbackMd);
+                    sourceBadge.textContent = 'Local Template';
+                    sourceBadge.classList.remove('hidden');
+                }
+            } else {
+                const localMd = buildLocalStructuredMinutes({ title, locationStr, chairStr, preset, customPrompt, dateStr, durationStr, attendees });
+                state.latestMinutesMarkdown = localMd;
+                renderMarkdownMinutes(localMd);
+                sourceBadge.textContent = 'Local Template';
+                sourceBadge.classList.remove('hidden');
+                showToast('Best-Practice Minutes generated! (Tip: Add a free Gemini key in AI Engine for deep AI synthesis)', 'success');
+            }
+
+            btn.disabled = false;
+            icon.className = 'fa-solid fa-sparkles text-amber-300';
+            label.textContent = 'Generate Best-Practice Minutes & Summary';
+        }
+
+        function buildLocalStructuredMinutes({ title, locationStr, chairStr, preset, customPrompt, dateStr, durationStr, attendees }) {
+            const textSegments = state.segments.filter(s => s.type === 'text');
+            const audioSegments = state.segments.filter(s => s.type === 'audio');
+            const khmerSegments = textSegments.filter(s => s.lang === 'Khmer');
+            const englishSegments = textSegments.filter(s => s.lang === 'English');
+
+            const actionKeywords = /(will|action|deadline|friday|monday|tuesday|next week|submit|prepare|finalize|send|approve|ត្រូវ|រៀបចំ|បញ្ជូន|សម្រេច|ថ្ងៃ)/i;
+            const decisionKeywords = /(agreed|approved|decided|confirmed|consensus|សម្រេច|ឯកភាព|យល់ព្រម)/i;
+
+            const extractedDecisions = [];
+            const extractedActions = [];
+            const discussionPoints = [];
+
+            state.segments.forEach(seg => {
+                const spLabel = getSpeakerDisplay(seg.speakerId).label;
+                if (seg.type === 'text') {
+                    discussionPoints.push(`- **${spLabel}** _(${seg.lang}, ${seg.timestamp})_: ${seg.text}`);
+                    if (decisionKeywords.test(seg.text)) {
+                        extractedDecisions.push(`- **Confirmed by ${spLabel}**: ${seg.text}`);
+                    }
+                    if (actionKeywords.test(seg.text)) {
+                        extractedActions.push(`| ${seg.text.replace(/\|/g, '/')} | ${spLabel} | Next Review Cycle | Open |`);
+                    }
+                } else {
+                    const clipNote = seg.translation
+                        ? seg.translation
+                        : `Un-translated foreign-language audio clip recorded at ${seg.timestamp} (pending user translation).`;
+                    discussionPoints.push(`- **${spLabel}** _(Other Language Clip, ${seg.timestamp})_: ${clipNote}`);
+                }
+            });
+
+            if (extractedDecisions.length === 0) {
+                extractedDecisions.push('- Alignment achieved across participating speakers on immediate next steps and bilingual follow-up.');
+            }
+            if (extractedActions.length === 0) {
+                extractedActions.push(`| Circulate finalized bilingual meeting minutes to stakeholders | ${getSpeakerDisplay('Speaker A').label} | Within 24 Hours | Pending |`);
+            }
+
+            let headerTitle = `# MINUTES OF MEETING: ${title.toUpperCase()}`;
+            if (preset === 'board') headerTitle = `# FORMAL BOARD & GOVERNANCE MINUTES: ${title.toUpperCase()}`;
+            if (preset === 'bilingual') headerTitle = `# កំណត់ហេតុអង្គប្រជុំ / MINUTES OF MEETING: ${title.toUpperCase()}`;
+
             const tableHeader = ['| Metadata | Details |', '| :--- | :--- |'].join('\n');
             const tableRows = [
                 `| **Date** | ${dateStr} |`,
@@ -56,5 +1421,389 @@
                 tableRows.push(`| **Custom Focus** | ${customPrompt} |`);
             }
 
-            return `${headerTitle}\n\n${tableHeader}\n${tableRows.join('\n')}\n` +
-<!-- ... existing code ... -->
+            const actionTableHeader = ['| Action Item / Deliverable | Owner | Target Timeline | Status |', '| :--- | :--- | :--- | :--- |'].join('\n');
+
+            return `${headerTitle}\n\n${tableHeader}\n${tableRows.join('\n')}\n\n` +
+`## 1. Executive Summary
+This meeting convened ${state.speakers.length} identified voice participants (${attendees}) across ${state.segments.length} recorded speaking turns in Khmer and English${audioSegments.length > 0 ? ` alongside ${audioSegments.length} recorded foreign-language voice clip(s)` : ''}. Discussions centered on operational milestones, cross-team coordination, and deliverable timelines.${preset === 'bilingual' ? `\n\n**សង្ខេបខ្លឹមសារប្រជុំ (Khmer Summary):** អង្គប្រជុំបានពិភាក្សា និងឯកភាពលើផែនការការងារសំខាន់ៗ ដោយមានការចូលរួមពី ${attendees} និងបានកំណត់ភារកិច្ចទទួលខុសត្រូវច្បាស់លាស់សម្រាប់អនុវត្តបន្ត។` : ''}
+
+## 2. Key Discussion Points (Speaker-Attributed)
+${discussionPoints.join('\n')}
+
+## 3. Key Decisions Made
+${extractedDecisions.join('\n')}
+
+## 4. Action Items & Accountability
+${actionTableHeader}
+${extractedActions.join('\n')}
+
+---
+*Generated by ScribeKH Bilingual Meeting Studio*`;
+        }
+
+        function renderMarkdownMinutes(md) {
+            const container = document.getElementById('minutes-output-container');
+            const lines = md.split('\n');
+            let html = '<div contenteditable="true" class="outline-none space-y-3 font-khmer">';
+            let inTable = false;
+            let tableRows = [];
+
+            const flushTable = () => {
+                if (!inTable || tableRows.length === 0) return;
+                html += '<div class="overflow-x-auto my-2 rounded-xl border border-slate-200"><table class="w-full text-left border-collapse text-xs">';
+                tableRows.forEach((row, rIdx) => {
+                    const cells = row.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
+                    if (cells.every(c => /^:?-+:?$/.test(c))) return;
+                    const tag = rIdx === 0 ? 'th' : 'td';
+                    const rowClass = rIdx === 0 ? 'bg-slate-100 font-bold text-slate-800 border-b border-slate-200' : 'border-b border-slate-100';
+                    html += `<tr class="${rowClass}">`;
+                    cells.forEach(cell => {
+                        html += `<${tag} class="p-2.5">${formatInlineMd(cell)}</${tag}>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</table></div>';
+                inTable = false;
+                tableRows = [];
+            };
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+                    inTable = true;
+                    tableRows.push(trimmed);
+                    return;
+                } else {
+                    flushTable();
+                }
+
+                if (trimmed.startsWith('# ')) {
+                    html += `<h1 class="text-base sm:text-lg font-bold text-slate-900 border-b border-slate-200 pb-2">${formatInlineMd(trimmed.slice(2))}</h1>`;
+                } else if (trimmed.startsWith('## ')) {
+                    html += `<h2 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-indigo-700 pt-2">${formatInlineMd(trimmed.slice(3))}</h2>`;
+                } else if (trimmed.startsWith('### ')) {
+                    html += `<h3 class="text-xs sm:text-sm font-bold text-slate-800 pt-1">${formatInlineMd(trimmed.slice(4))}</h3>`;
+                } else if (trimmed.startsWith('- ')) {
+                    html += `<div class="flex items-start gap-2 pl-1"><span class="text-indigo-500 mt-1">•</span><p class="flex-1 text-slate-700">${formatInlineMd(trimmed.slice(2))}</p></div>`;
+                } else if (trimmed === '---') {
+                    html += '<hr class="border-slate-200 my-3">';
+                } else if (trimmed.length > 0) {
+                    html += `<p class="text-slate-700">${formatInlineMd(trimmed)}</p>`;
+                }
+            });
+            flushTable();
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function formatInlineMd(text) {
+            return escapeHtml(text)
+                .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>')
+                .replace(/_(.+?)_/g, '<em class="text-slate-500">$1</em>');
+        }
+
+        // =========================================================================
+        // 7. DEMO BILINGUAL MEETING SIMULATION
+        // =========================================================================
+        function runDemoSimulation() {
+            if (state.isLive) stopLiveTranscription();
+            state.segments = [];
+            state.speakers = [
+                { id: 'Speaker A', alias: 'Project Director', colorIdx: 0 },
+                { id: 'Speaker B', alias: 'Operations Lead', colorIdx: 1 },
+                { id: 'Speaker C', alias: 'Regional Advisor', colorIdx: 2 }
+            ];
+            state.activeSpeakerId = 'Speaker A';
+            state.meetingSeconds = 0;
+            renderSpeakerPills();
+
+            const demoScript = [
+                {
+                    delay: 100,
+                    time: 5,
+                    type: 'text',
+                    speakerId: 'Speaker A',
+                    lang: 'Khmer',
+                    text: 'សួស្តីអ្នកទាំងអស់គ្នា! ថ្ងៃនេះយើងប្រជុំដើម្បីពិនិត្យមើលវឌ្ឍនភាពគម្រោងប្រចាំត្រីមាស និងផែនការដឹកជញ្ជូនថ្មី។'
+                },
+                {
+                    delay: 500,
+                    time: 24,
+                    type: 'text',
+                    speakerId: 'Speaker B',
+                    lang: 'English',
+                    text: 'Thank you. From the operations side, we have finalized the Phnom Penh warehouse schedule and reduced customs clearance delays by 18 percent.'
+                },
+                {
+                    delay: 950,
+                    time: 48,
+                    type: 'text',
+                    speakerId: 'Speaker A',
+                    lang: 'Khmer',
+                    text: 'ល្អណាស់! តើយើងអាចសម្រេច និងបញ្ជូនរបាយការណ៍ថវិកាចុងក្រោយនៅថ្ងៃសុក្រនេះបានទេ?'
+                },
+                {
+                    delay: 1400,
+                    time: 72,
+                    type: 'audio',
+                    speakerId: 'Speaker C',
+                    lang: 'Other Language (Voice Clip)',
+                    isDemoClip: true,
+                    detectedLanguage: 'Auto-Detect',
+                    translation: ''
+                },
+                {
+                    delay: 1850,
+                    time: 96,
+                    type: 'text',
+                    speakerId: 'Speaker B',
+                    lang: 'English',
+                    text: 'Agreed. Speaker B will submit the finalized budget sheet by Friday at 3:00 PM, and we confirmed Tuesday for the regional rollout.'
+                }
+            ];
+
+            document.getElementById('meeting-title-input').value = 'Phnom Penh Q4 Bilingual Operations & Logistics Review';
+            document.getElementById('meeting-location-input').value = 'Phnom Penh HQ / Microsoft Teams';
+            document.getElementById('meeting-chair-input').value = 'Speaker A (Project Director)';
+
+            demoScript.forEach(item => {
+                setTimeout(() => {
+                    state.meetingSeconds = item.time;
+                    document.getElementById('meeting-timer').textContent = formatSeconds(state.meetingSeconds);
+                    selectActiveSpeaker(item.speakerId);
+                    addTranscriptSegment(item);
+                }, item.delay);
+            });
+
+            setTimeout(() => {
+                showToast('Demo bilingual meeting loaded! Try translating Speaker C\'s voice clip or click "Generate Best-Practice Minutes".', 'success');
+            }, 2000);
+        }
+
+        // =========================================================================
+        // 8. AUDIO WAVEFORM VISUALIZER, TIMER & EXPORT HELPERS
+        // =========================================================================
+        function initWaveformIdle() {
+            const canvas = document.getElementById('audio-visualizer');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth || 600;
+            canvas.height = canvas.offsetHeight || 64;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+        }
+
+        function startWaveformVisualizer(stream) {
+            const canvas = document.getElementById('audio-visualizer');
+            const placeholder = document.getElementById('visualizer-placeholder');
+            if (placeholder) placeholder.classList.add('hidden');
+
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            state.audioCtx = new AudioContext();
+            const source = state.audioCtx.createMediaStreamSource(stream);
+            state.analyser = state.audioCtx.createAnalyser();
+            state.analyser.fftSize = 128;
+            source.connect(state.analyser);
+
+            const bufferLength = state.analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            const ctx = canvas.getContext('2d');
+
+            function draw() {
+                state.animationFrameId = requestAnimationFrame(draw);
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+                state.analyser.getByteFrequencyData(dataArray);
+
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 1.8;
+                let x = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * (canvas.height * 0.85);
+                    ctx.fillStyle = state.isRecordingOtherLang ? '#10b981' : '#6366f1';
+                    ctx.fillRect(x, (canvas.height - barHeight) / 2, Math.max(barWidth - 2, 2), Math.max(barHeight, 2));
+                    x += barWidth;
+                }
+            }
+            draw();
+        }
+
+        function stopWaveformVisualizer() {
+            if (state.animationFrameId) cancelAnimationFrame(state.animationFrameId);
+            if (state.audioCtx) {
+                try { state.audioCtx.close(); } catch (e) {}
+                state.audioCtx = null;
+            }
+            const placeholder = document.getElementById('visualizer-placeholder');
+            if (placeholder) placeholder.classList.remove('hidden');
+            initWaveformIdle();
+        }
+
+        function startMeetingTimer() {
+            if (state.timerInterval) return;
+            state.timerInterval = setInterval(() => {
+                state.meetingSeconds++;
+                document.getElementById('meeting-timer').textContent = formatSeconds(state.meetingSeconds);
+            }, 1000);
+        }
+
+        function stopMeetingTimer() {
+            if (state.timerInterval) {
+                clearInterval(state.timerInterval);
+                state.timerInterval = null;
+            }
+        }
+
+        function formatSeconds(totalSec) {
+            const hrs = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+            const mins = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+            const secs = String(totalSec % 60).padStart(2, '0');
+            return `${hrs}:${mins}:${secs}`;
+        }
+
+        function copyMinutesToClipboard() {
+            if (!state.latestMinutesMarkdown) {
+                showToast('Generate Minutes of Meeting first before copying.', 'error');
+                return;
+            }
+            const tempTextarea = document.createElement('textarea');
+            tempTextarea.value = state.latestMinutesMarkdown;
+            document.body.appendChild(tempTextarea);
+            tempTextarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempTextarea);
+            showToast('Minutes copied to clipboard!', 'success');
+        }
+
+        function downloadMinutesMarkdown() {
+            if (!state.latestMinutesMarkdown) {
+                showToast('Generate Minutes of Meeting first before downloading.', 'error');
+                return;
+            }
+            const blob = new Blob([state.latestMinutesMarkdown], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Minutes_of_Meeting_${new Date().toISOString().slice(0, 10)}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportTranscriptTxt() {
+            if (state.segments.length === 0) {
+                showToast('No transcript lines to export yet.', 'error');
+                return;
+            }
+            const lines = state.segments.map(s => {
+                const sp = getSpeakerDisplay(s.speakerId).label;
+                const content = s.type === 'text' ? s.text : (s.translation || '[Recorded Foreign Voice Clip]');
+                return `[${s.timestamp}] ${sp} (${s.lang}): ${content}`;
+            });
+            const blob = new Blob([lines.join('\n\n')], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Meeting_Transcript_${new Date().toISOString().slice(0, 10)}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function printMinutesReport() {
+            if (!state.latestMinutesMarkdown) {
+                showToast('Generate Minutes of Meeting first before printing.', 'error');
+                return;
+            }
+            const content = document.getElementById('minutes-output-container').innerHTML;
+            const printWin = window.open('', '_blank', 'width=850,height=900');
+            if (!printWin) {
+                showToast('Please allow pop-ups to print or export PDF.', 'error');
+                return;
+            }
+            printWin.document.write(`
+                <html>
+                <head>
+                    <title>Minutes of Meeting</title>
+                    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Kantumruy+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+                    <style>
+                        body { font-family: 'Inter', 'Kantumruy Pro', sans-serif; padding: 36px; color: #1e293b; line-height: 1.6; }
+                        h1 { font-size: 20px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }
+                        h2 { font-size: 14px; text-transform: uppercase; color: #3730a3; margin-top: 22px; }
+                        table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+                        th { background: #f1f5f9; }
+                    </style>
+                </head>
+                <body>${content}</body>
+                </html>
+            `);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => { printWin.print(); }, 400);
+        }
+
+        function requestClearSession() {
+            document.getElementById('confirm-reset-modal').classList.remove('hidden');
+        }
+
+        function closeResetModal() {
+            document.getElementById('confirm-reset-modal').classList.add('hidden');
+        }
+
+        function confirmClearSession() {
+            if (state.isLive) stopLiveTranscription();
+            if (state.isRecordingOtherLang) stopOtherLanguageClip();
+            state.segments = [];
+            state.meetingSeconds = 0;
+            state.latestMinutesMarkdown = '';
+            document.getElementById('meeting-timer').textContent = '00:00:00';
+            document.getElementById('minutes-source-badge').classList.add('hidden');
+            renderTranscriptFeed();
+            document.getElementById('minutes-output-container').innerHTML = `
+                <div class="h-full flex flex-col items-center justify-center text-center py-10 px-4 text-slate-400">
+                    <i class="fa-solid fa-clipboard-list text-3xl mb-3 text-slate-300"></i>
+                    <p class="text-xs sm:text-sm font-medium text-slate-600">No Minutes Generated Yet</p>
+                    <p class="text-xs text-slate-400 max-w-xs mt-1">
+                        Capture your meeting or run the Demo Simulation, then click <strong class="text-slate-600">Generate Best-Practice Minutes & Summary</strong>.
+                    </p>
+                </div>
+            `;
+            closeResetModal();
+            showToast('Meeting session cleared.', 'info');
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const styles = {
+                success: 'bg-emerald-900 text-white border-emerald-700',
+                error: 'bg-rose-900 text-white border-rose-700',
+                info: 'bg-slate-900 text-white border-slate-700'
+            };
+            toast.className = `pointer-events-auto px-4 py-3 rounded-xl shadow-lg border text-xs font-medium flex items-center justify-between gap-3 transition-all ${styles[type] || styles.info}`;
+            toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+    </script>
+</body>
+</html>
