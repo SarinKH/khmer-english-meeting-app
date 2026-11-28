@@ -144,24 +144,24 @@
                 </div>
 
                 <!-- Primary Recording & Foreign Language Controls -->
-                <div class="flex flex-wrap items-center gap-2">
-                    <button id="btn-toggle-live" onclick="toggleLiveTranscription('mic')"
-                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <button type="button" id="btn-toggle-live" onclick="toggleLiveTranscription()"
+                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer">
                         <i id="icon-toggle-live" class="fa-solid fa-microphone"></i>
                         <span id="label-toggle-live">Start Live Capture</span>
                     </button>
 
-                    <!-- Capture System / Browser Tab Audio (e.g. YouTube / Zoom tab) -->
-                    <button id="btn-capture-tab" onclick="toggleLiveTranscription('tab')"
-                        class="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-all flex items-center justify-center gap-1.5"
-                        title="Capture audio directly from a YouTube or Zoom/Meet browser tab">
-                        <i class="fa-solid fa-display text-sky-600"></i>
+                    <!-- Capture Browser Tab / Video / Loudspeaker Audio -->
+                    <button type="button" id="btn-capture-tab" onclick="toggleTabAudioCapture()"
+                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        title="Capture clean audio directly from a YouTube tab, Zoom/Meet tab, or system window">
+                        <i id="icon-capture-tab" class="fa-solid fa-display text-sky-600"></i>
                         <span id="label-capture-tab">Tab / Video Audio</span>
                     </button>
 
                     <!-- Record Other Language Voice Clip -->
-                    <button id="btn-record-other" onclick="toggleOtherLanguageClip()"
-                        class="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center justify-center gap-1.5"
+                    <button type="button" id="btn-record-other" onclick="toggleOtherLanguageClip()"
+                        class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
                         title="Record raw audio when someone speaks another language (e.g., French, Chinese, Thai, Japanese) so you can decide how to translate it to English">
                         <i id="icon-record-other" class="fa-solid fa-record-vinyl text-emerald-600"></i>
                         <span id="label-record-other">Record Other Language</span>
@@ -487,8 +487,8 @@
 
         const state = {
             isLive: false,
-            captureSource: 'mic', // 'mic' or 'tab'
-            liveEngine: 'gemini-live', // 'gemini-live' or 'browser'
+            isTabAudioMode: false,
+            captureEngine: 'browser', // 'browser' (Web Speech API) or 'gemini' (Gemini Live Audio Chunks)
             recognitionLang: 'km-KH', // 'km-KH', 'en-US', or 'auto'
             autoLangToggle: 'km-KH',
             speakers: [
@@ -650,77 +650,77 @@
                 if (reportPill) {
                     reportPill.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200';
                     reportPill.textContent = 'Gemini AI Enabled';
+        async function toggleLiveTranscription() {
+            if (state.isLive) {
+                stopLiveTranscription();
+            } else {
+                state.isTabAudioMode = false;
+                await startLiveTranscription();
+            }
+        }
+
+        async function toggleTabAudioCapture() {
+            if (state.isLive && state.isTabAudioMode) {
+                stopLiveTranscription();
+                return;
+            }
+            if (state.isLive) {
+                stopLiveTranscription();
+            }
+
+            if (!getGeminiConfig().isConfigured) {
+                showToast('Add your free Google AI Studio key in "AI Engine" first to transcribe Tab / YouTube audio!', 'info');
+                openApiSettingsModal();
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                showToast('Tab / Video audio sharing is not supported in this embedded preview. Open your GitHub Pages link in Chrome or Edge!', 'error');
+                return;
+            }
+
+            try {
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
+                });
+
+                const audioTracks = displayStream.getAudioTracks();
+                if (!audioTracks || audioTracks.length === 0) {
+                    displayStream.getTracks().forEach(t => t.stop());
+                    showToast('No audio track shared! When selecting a Chrome tab or window, make sure to check "Share tab audio".', 'error');
+                    return;
                 }
-            } else {
-                btn.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200';
-                dot.className = 'w-2 h-2 rounded-full bg-slate-400';
-                label.textContent = 'AI Engine: Browser Offline';
-                if (reportPill) {
-                    reportPill.className = 'text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
-                    reportPill.textContent = 'Local Structured Mode';
-                }
+
+                // Keep only the audio track for transcription and stop video track when user stops sharing
+                displayStream.getVideoTracks().forEach(vt => {
+                    vt.onended = () => {
+                        if (state.isLive && state.isTabAudioMode) stopLiveTranscription();
+                    };
+                });
+
+                state.isTabAudioMode = true;
+                state.captureEngine = 'gemini';
+                const geminiRadio = document.querySelector('input[name="capture-engine"][value="gemini"]');
+                if (geminiRadio) geminiRadio.checked = true;
+
+                state.micStream = new MediaStream(audioTracks);
+                state._displayStreamToClose = displayStream;
+                await startGeminiStreamLoop('Tab / Video Audio');
+            } catch (err) {
+                showToast(`Tab audio capture cancelled or blocked: ${err.message}`, 'error');
             }
         }
 
-        function openApiSettingsModal() {
-            const { apiKey, model } = getGeminiConfig();
-            document.getElementById('gemini-api-key-input').value = apiKey;
-            document.getElementById('gemini-model-select').value = model;
-            document.getElementById('api-test-feedback').classList.add('hidden');
-            document.getElementById('api-settings-modal').classList.remove('hidden');
-        }
-
-        function closeApiSettingsModal() {
-            document.getElementById('api-settings-modal').classList.add('hidden');
-        }
-
-        function toggleApiKeyVisibility() {
-            const input = document.getElementById('gemini-api-key-input');
-            const icon = document.getElementById('api-key-eye-icon');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.className = 'fa-regular fa-eye-slash';
-            } else {
-                input.type = 'password';
-                icon.className = 'fa-regular fa-eye';
+        async function startLiveTranscription() {
+            if (state.captureEngine === 'gemini') {
+                await startGeminiLiveAudioCapture();
+                return;
             }
-        }
 
-        function saveApiSettings() {
-            const keyVal = document.getElementById('gemini-api-key-input').value.trim();
-            const modelVal = document.getElementById('gemini-model-select').value;
-
-            if (keyVal) {
-                localStorage.setItem(STORAGE_KEY_API, keyVal);
-            } else {
-                localStorage.removeItem(STORAGE_KEY_API);
-            }
-            localStorage.setItem(STORAGE_KEY_MODEL, modelVal);
-
-            updateAiEngineStatusUI();
-            syncDefaultLiveEngine();
-            closeApiSettingsModal();
-            showToast(keyVal ? 'Gemini AI configuration saved to your browser!' : 'Switched to Browser Offline mode.', 'success');
-        }
-
-        function clearSavedApiKey() {
-            localStorage.removeItem(STORAGE_KEY_API);
-            document.getElementById('gemini-api-key-input').value = '';
-            document.getElementById('api-test-feedback').classList.add('hidden');
-            updateAiEngineStatusUI();
-            showToast('API key removed from local browser storage.', 'info');
-        }
-
-        async function testGeminiApiKey() {
-            const keyVal = document.getElementById('gemini-api-key-input').value.trim();
-            const modelVal = document.getElementById('gemini-model-select').value;
-            const feedback = document.getElementById('api-test-feedback');
-            const testBtn = document.getElementById('btn-test-api-key');
-
-            if (!keyVal) {
-                feedback.className = 'text-xs p-2.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800';
-                feedback.textContent = 'Please paste a Google AI Studio API key (starts with AIza) first.';
-                feedback.classList.remove('hidden');
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                showToast('Browser Speech API requires Chrome or Edge. Switch to "Gemini AI Live Audio" or try "Demo Simulation"!', 'error');
                 return;
             }
 
@@ -971,61 +971,59 @@
                                 text: cleanText
                             });
                             state.lastSpeechTimestamp = Date.now();
-                        }
-                    } else {
-                        interimTranscript += transcript;
+        // Gemini AI Live Audio Stream Mode: records 6-second rolling audio segments & transcribes
+        // Khmer + English + detects Speaker A/B/C changes automatically via Gemini multimodal audio
+        async function startGeminiLiveAudioCapture() {
+            const { isConfigured } = getGeminiConfig();
+            if (!isConfigured) {
+                showToast('Add your free Google AI Studio key in "AI Engine" first.', 'error');
+                openApiSettingsModal();
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast('Microphone API unavailable here. Open your live GitHub Pages HTTPS link in Chrome or Edge.', 'error');
+                return;
+            }
+
+            try {
+                // Disable echoCancellation & noiseSuppression so phone loudspeakers and room voices are captured clearly
+                state.micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: true
                     }
-                }
-
-                if (interimText) {
-                    interimText.textContent = interimTranscript || 'Listening...';
-                }
-            };
-
-            recognition.onerror = (event) => {
-                if (event.error === 'no-speech') {
-                    interimText.textContent = 'No voice detected yet — try "Gemini Live Audio" for phone loudspeakers!';
-                    return;
-                }
-                if (event.error === 'not-allowed') {
-                    showToast('Microphone access blocked by browser.', 'error');
-                    stopLiveTranscription();
-                }
-            };
-
-            recognition.onend = () => {
-                if (state.isLive && state.liveEngine === 'browser') {
-                    if (state.recognitionLang === 'auto') {
-                        state.autoLangToggle = state.autoLangToggle === 'km-KH' ? 'en-US' : 'km-KH';
-                        recognition.lang = state.autoLangToggle;
-                    } else {
-                        recognition.lang = state.recognitionLang;
-                    }
-                    try { recognition.start(); } catch (e) {}
-                }
-            };
-
-            recognition.lang = state.recognitionLang === 'auto' ? state.autoLangToggle : state.recognitionLang;
-            recognition.start();
+                });
+                await startGeminiStreamLoop('Microphone (Loudspeaker-Ready)');
+            } catch (err) {
+                showToast(`Microphone permission denied or unavailable: ${err.message}`, 'error');
+            }
         }
 
-        // Captures rolling 5.5-second audio segments and sends them to Gemini for multi-speaker Khmer/English live transcription
-        function startGeminiLiveChunkLoop(stream) {
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-                ? 'audio/webm;codecs=opus'
-                : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
-            const cleanMime = (mimeType || 'audio/webm').split(';')[0];
+        async function startGeminiStreamLoop(sourceLabel) {
+            const { apiKey, model } = getGeminiConfig();
+            startWaveformVisualizer(state.micStream);
 
-            const recordOneSlice = () => {
-                if (!state.isLive) return;
-                let chunks = [];
-                let recorder;
-                try {
-                    recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-                } catch (e) {
-                    return;
-                }
-                state.liveChunkRecorder = recorder;
+            state.isLive = true;
+            startMeetingTimer();
+            updateLiveButtonUI(true);
+
+            const interimBar = document.getElementById('interim-bar');
+            const interimEl = document.getElementById('interim-text');
+            interimBar.classList.remove('hidden');
+            updateInterimSpeakerTag();
+            interimEl.textContent = `Gemini AI listening via ${sourceLabel} (transcribes every 5.5s)...`;
+
+            const recordAndSendSlice = () => {
+                if (!state.isLive || !state.micStream) return;
+                const chunks = [];
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+
+                const recorder = mimeType ? new MediaRecorder(state.micStream, { mimeType }) : new MediaRecorder(state.micStream);
+                state.geminiChunkRecorder = recorder;
 
                 recorder.ondataavailable = (e) => {
                     if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -1033,33 +1031,24 @@
 
                 recorder.onstop = async () => {
                     if (chunks.length === 0) return;
+                    const cleanMime = (recorder.mimeType || 'audio/webm').split(';')[0];
                     const blob = new Blob(chunks, { type: cleanMime });
-                    // Skip tiny silent blobs (< 1.5 KB)
-                    if (blob.size < 1500) return;
-
-                    const interimEl = document.getElementById('interim-text');
-                    if (interimEl && state.isLive) {
-                        interimEl.textContent = 'Transcribing Khmer / English audio chunk...';
-                    }
+                    if (blob.size < 1000) return; // skip tiny silent blobs
 
                     try {
+                        if (interimEl && state.isLive) {
+                            interimEl.textContent = 'Transcribing Khmer & English speech with Gemini AI...';
+                        }
                         const base64Audio = await blobToBase64(blob);
                         const langHint = state.recognitionLang === 'km-KH'
-                            ? 'Focus primarily on Khmer (ភាសាខ្មែរ), plus any English words.'
-                            : (state.recognitionLang === 'en-US'
-                                ? 'Focus primarily on English, plus any Khmer words.'
-                                : 'The speakers may speak Khmer (ភាសាខ្មែរ), English, or mix both.');
+                            ? 'Primary language is Khmer (ភាសាខ្មែរ).'
+                            : (state.recognitionLang === 'en-US' ? 'Primary language is English.' : 'Speech may be in Khmer (ភាសាខ្មែរ), English, or mixed.');
 
-                        const speakerNames = state.speakers.map(s => s.id).join(', ');
-                        const prompt = `Listen carefully to this meeting audio clip (which may come from a room microphone or a loudspeaker). ${langHint}
-Identify distinct voices as ${speakerNames} (or add Speaker C, etc. if a new voice speaks).
-Return ONLY a valid JSON array of objects, with no markdown fences or extra text. Each object must have:
-- "speaker": e.g. "Speaker A" or "Speaker B"
-- "lang": "Khmer" or "English"
-- "text": exact verbatim transcript in Khmer script (for Khmer) or English script (for English).
-If there is only silence, music, or background noise with no clear speech, return [].`;
+                        const prompt = `Listen carefully to this meeting or loudspeaker audio clip. ${langHint}
+If there is only silence or background noise with no speech, reply with exactly: SILENCE
+Otherwise, transcribe what is spoken verbatim in its original script (Khmer script for Khmer, English for English). If multiple speakers speak in this clip, separate their turns on new lines starting with [Speaker A]: or [Speaker B]: based on voice differences. Output ONLY the transcript lines, nothing else.`;
 
-                        const { text } = await callGeminiWithFallback({
+                        const { data } = await callGeminiWithFallback(apiKey, model, {
                             contents: [{
                                 parts: [
                                     { text: prompt },
@@ -1068,24 +1057,37 @@ If there is only silence, music, or background noise with no clear speech, retur
                             }]
                         });
 
-                        const cleanedJson = text.replace(/```json|```/gi, '').trim();
-                        const parsed = JSON.parse(cleanedJson);
-                        if (Array.isArray(parsed) && parsed.length > 0) {
-                            parsed.forEach(turn => {
-                                if (!turn || !turn.text || !turn.text.trim()) return;
-                                const spId = ensureSpeakerExists(turn.speaker || state.activeSpeakerId);
-                                selectActiveSpeaker(spId);
-                                const detectedLang = detectKhmerOrEnglish(turn.text);
-                                addTranscriptSegment({
-                                    type: 'text',
-                                    speakerId: spId,
-                                    lang: detectedLang,
-                                    text: turn.text.trim()
-                                });
+                        const reply = (data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n') || '').trim();
+                        if (reply && reply !== 'SILENCE' && !/^SILENCE\.?$/i.test(reply)) {
+                            const lines = reply.split('\n').map(l => l.trim()).filter(Boolean);
+                            lines.forEach((line, idx) => {
+                                const speakerMatch = line.match(/^\[(Speaker [A-Z])\]:\s*(.+)$/i);
+                                if (speakerMatch) {
+                                    const detectedSp = speakerMatch[1].replace(/^speaker/i, 'Speaker');
+                                    if (!state.speakers.some(s => s.id === detectedSp)) {
+                                        state.speakers.push({ id: detectedSp, alias: '', colorIdx: state.speakers.length });
+                                    }
+                                    selectActiveSpeaker(detectedSp);
+                                    const cleanText = speakerMatch[2].trim();
+                                    addTranscriptSegment({
+                                        type: 'text',
+                                        speakerId: detectedSp,
+                                        lang: detectKhmerOrEnglish(cleanText),
+                                        text: cleanText
+                                    });
+                                } else {
+                                    if (idx > 0) cycleNextSpeakerTurn();
+                                    addTranscriptSegment({
+                                        type: 'text',
+                                        speakerId: state.activeSpeakerId,
+                                        lang: detectKhmerOrEnglish(line),
+                                        text: line
+                                    });
+                                }
                             });
                         }
                         if (interimEl && state.isLive) {
-                            interimEl.textContent = 'Listening for next speech turn...';
+                            interimEl.textContent = `Gemini AI listening via ${sourceLabel}...`;
                         }
                     } catch (err) {
                         if (interimEl && state.isLive) {
@@ -1102,36 +1104,21 @@ If there is only silence, music, or background noise with no clear speech, retur
                 }, 5500);
             };
 
-            recordOneSlice();
-            state.liveChunkInterval = setInterval(recordOneSlice, 5600);
-        }
-
-        function ensureSpeakerExists(rawSpeakerLabel) {
-            const normalized = String(rawSpeakerLabel || '').trim();
-            const match = normalized.match(/Speaker\s+([A-Z])/i);
-            const targetId = match ? `Speaker ${match[1].toUpperCase()}` : 'Speaker A';
-            if (!state.speakers.some(s => s.id === targetId)) {
-                state.speakers.push({
-                    id: targetId,
-                    alias: '',
-                    colorIdx: state.speakers.length
-                });
-                renderSpeakerPills();
-            }
-            return targetId;
+            recordAndSendSlice();
+            state.geminiChunkInterval = setInterval(recordAndSendSlice, 5700);
         }
 
         function stopLiveTranscription() {
+            commitPendingInterim();
             state.isLive = false;
-            if (state.liveChunkInterval) {
-                clearInterval(state.liveChunkInterval);
-                state.liveChunkInterval = null;
+            state.isTabAudioMode = false;
+            if (state.geminiChunkInterval) {
+                clearInterval(state.geminiChunkInterval);
+                state.geminiChunkInterval = null;
             }
-            if (state.liveChunkRecorder && state.liveChunkRecorder.state === 'recording') {
-                try { state.liveChunkRecorder.stop(); } catch (e) {}
+            if (state.geminiChunkRecorder && state.geminiChunkRecorder.state === 'recording') {
+                try { state.geminiChunkRecorder.stop(); } catch (e) {}
             }
-            state.liveChunkRecorder = null;
-
             if (state.recognition) {
                 try { state.recognition.stop(); } catch (e) {}
                 state.recognition = null;
@@ -1140,30 +1127,43 @@ If there is only silence, music, or background noise with no clear speech, retur
                 state.micStream.getTracks().forEach(t => t.stop());
                 state.micStream = null;
             }
+            if (state._displayStreamToClose) {
+                state._displayStreamToClose.getTracks().forEach(t => t.stop());
+                state._displayStreamToClose = null;
+            }
             stopWaveformVisualizer();
             stopMeetingTimer();
             updateLiveButtonUI(false);
             document.getElementById('interim-bar').classList.add('hidden');
         }
 
-        function updateLiveButtonUI(isLive, source = 'mic') {
+        function updateLiveButtonUI(isLive) {
             const btn = document.getElementById('btn-toggle-live');
             const icon = document.getElementById('icon-toggle-live');
             const label = document.getElementById('label-toggle-live');
             const tabBtn = document.getElementById('btn-capture-tab');
+            const tabLabel = document.getElementById('label-capture-tab');
             const dot = document.getElementById('live-status-dot');
 
+            if (isLive && state.isTabAudioMode) {
+                tabBtn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer';
+                tabLabel.textContent = 'Stop Tab Audio';
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping';
+                return;
+            } else if (tabBtn && tabLabel) {
+                tabBtn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-all flex items-center justify-center gap-2 cursor-pointer';
+                tabLabel.textContent = 'Tab / Video Audio';
+            }
+
             if (isLive) {
-                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all flex items-center justify-center gap-2';
+                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer';
                 icon.className = 'fa-solid fa-stop';
-                label.textContent = source === 'tab' ? 'Stop Tab Capture' : 'Stop Live Capture';
-                if (tabBtn) tabBtn.disabled = true;
+                label.textContent = 'Stop Live Capture';
                 dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping';
             } else {
-                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2';
+                btn.className = 'flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer';
                 icon.className = 'fa-solid fa-microphone';
                 label.textContent = 'Start Live Capture';
-                if (tabBtn) tabBtn.disabled = false;
                 dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
             }
         }
