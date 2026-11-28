@@ -118,6 +118,24 @@
                     </div>
                 </div>
 
+                <!-- Capture Engine Selector (Browser Instant vs Gemini AI Audio) -->
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                    <span class="font-semibold text-slate-600 flex items-center gap-1.5">
+                        <i class="fa-solid fa-sliders text-indigo-500"></i>
+                        Live Speech Engine:
+                    </span>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="capture-engine" value="browser" checked onchange="setCaptureEngine(this.value)" class="accent-indigo-600">
+                            <span class="font-medium text-slate-700">Browser Instant (Free Offline)</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="capture-engine" value="gemini" onchange="setCaptureEngine(this.value)" class="accent-indigo-600">
+                            <span class="font-medium text-indigo-700">Gemini AI Live Audio (Khmer + EN + Auto Speaker)</span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Real-Time Audio Waveform Canvas -->
                 <div class="relative bg-slate-900 rounded-xl overflow-hidden h-16 mb-4 border border-slate-800 flex items-center justify-center">
                     <canvas id="audio-visualizer" class="w-full h-full block"></canvas>
@@ -463,6 +481,7 @@
 
         const state = {
             isLive: false,
+            captureEngine: 'browser', // 'browser' (Web Speech API) or 'gemini' (Gemini Live Audio Chunks)
             recognitionLang: 'km-KH', // 'km-KH', 'en-US', or 'auto'
             autoLangToggle: 'km-KH',
             speakers: [
@@ -471,10 +490,13 @@
             ],
             activeSpeakerId: 'Speaker A',
             lastSpeechTimestamp: 0,
+            lastInterimText: '',
             segments: [], // { id, type: 'text'|'audio', speakerId, lang, text, translation, audioUrl, audioBlob, audioMimeType, timestamp, rawTimeSec }
             meetingSeconds: 0,
             timerInterval: null,
             recognition: null,
+            geminiChunkInterval: null,
+            geminiChunkRecorder: null,
             audioCtx: null,
             analyser: null,
             micStream: null,
@@ -760,6 +782,22 @@
         // =========================================================================
         // 3. LANGUAGE MODE & LIVE SPEECH RECOGNITION (KHMER & ENGLISH)
         // =========================================================================
+        function setCaptureEngine(engine) {
+            if (engine === 'gemini' && !getGeminiConfig().isConfigured) {
+                showToast('Please paste your free Google AI Studio key in "AI Engine" first to use Gemini AI Live Audio.', 'info');
+                openApiSettingsModal();
+                const browserRadio = document.querySelector('input[name="capture-engine"][value="browser"]');
+                if (browserRadio) browserRadio.checked = true;
+                state.captureEngine = 'browser';
+                return;
+            }
+            state.captureEngine = engine;
+            if (state.isLive) {
+                stopLiveTranscription();
+                startLiveTranscription();
+            }
+        }
+
         function setRecognitionLanguage(lang) {
             state.recognitionLang = lang;
             ['km', 'en', 'auto'].forEach(key => {
@@ -772,11 +810,26 @@
                     : 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-600 hover:text-slate-900';
             });
 
-            if (state.isLive && state.recognition) {
+            if (state.isLive && state.captureEngine === 'browser' && state.recognition) {
+                commitPendingInterim();
                 try { state.recognition.stop(); } catch (e) {}
             }
             const labelMap = { 'km-KH': 'Khmer (ភាសាខ្មែរ)', 'en-US': 'English (US)', 'auto': 'Auto Khmer/English' };
             showToast(`Speech recognition switched to ${labelMap[lang]}`, 'info');
+        }
+
+        function commitPendingInterim() {
+            const pending = (state.lastInterimText || '').trim();
+            if (pending) {
+                addTranscriptSegment({
+                    type: 'text',
+                    speakerId: state.activeSpeakerId,
+                    lang: detectKhmerOrEnglish(pending),
+                    text: pending
+                });
+                state.lastInterimText = '';
+                state.lastSpeechTimestamp = Date.now();
+            }
         }
 
         async function toggleLiveTranscription() {
@@ -788,24 +841,31 @@
         }
 
         async function startLiveTranscription() {
+            if (state.captureEngine === 'gemini') {
+                await startGeminiLiveAudioCapture();
+                return;
+            }
+
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
-                showToast('Live Speech API requires Chrome or Edge. Try "Demo Simulation" to test all features!', 'error');
+                showToast('Browser Speech API requires Chrome or Edge. Switch to "Gemini AI Live Audio" or try "Demo Simulation"!', 'error');
                 return;
             }
 
-            try {
-                state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                startWaveformVisualizer(state.micStream);
-            } catch (err) {
-                showToast('Microphone permission denied or unavailable. Please allow microphone access.', 'error');
-                return;
-            }
-
+            // IMPORTANT: Do NOT open a concurrent getUserMedia() stream while Web SpeechRecognition
+            // is capturing on desktop Windows/macOS, because exclusive mic drivers block SpeechRecognition.
             state.isLive = true;
             state.lastSpeechTimestamp = Date.now();
+            state.lastInterimText = '';
             startMeetingTimer();
             updateLiveButtonUI(true);
+            startSimulatedSpeechPulse();
+
+            const interimBar = document.getElementById('interim-bar');
+            const interimEl = document.getElementById('interim-text');
+            interimBar.classList.remove('hidden');
+            updateInterimSpeakerTag();
+            interimEl.textContent = `Listening in ${state.recognitionLang === 'km-KH' ? 'Khmer (ភាសាខ្មែរ)' : state.recognitionLang === 'en-US' ? 'English' : 'Auto KM/EN'}... Speak clearly into your mic.`;
 
             const recognition = new SpeechRecognition();
             state.recognition = recognition;
@@ -814,8 +874,12 @@
             recognition.maxAlternatives = 1;
 
             recognition.onstart = () => {
-                document.getElementById('interim-bar').classList.remove('hidden');
+                interimBar.classList.remove('hidden');
                 updateInterimSpeakerTag();
+            };
+
+            recognition.onspeechstart = () => {
+                interimEl.textContent = 'Voice detected — transcribing...';
             };
 
             recognition.onresult = (event) => {
@@ -841,28 +905,43 @@
                                 text: cleanText
                             });
                             state.lastSpeechTimestamp = Date.now();
+                            state.lastInterimText = '';
                         }
                     } else {
                         interimTranscript += transcript;
                     }
                 }
 
-                const interimEl = document.getElementById('interim-text');
+                state.lastInterimText = interimTranscript;
                 if (interimEl) {
                     interimEl.textContent = interimTranscript || 'Listening...';
                 }
             };
 
             recognition.onerror = (event) => {
-                if (event.error === 'no-speech') return;
+                if (event.error === 'aborted') return;
+                if (event.error === 'no-speech') {
+                    if (interimEl) interimEl.textContent = 'Waiting for voice... (Check mic input or switch to Gemini AI Live Audio)';
+                    return;
+                }
+                if (event.error === 'audio-capture') {
+                    showToast('No microphone detected by browser. Check Windows/Mac Sound Input settings.', 'error');
+                    stopLiveTranscription();
+                    return;
+                }
+                if (event.error === 'network') {
+                    showToast('Browser speech service network error. Try "Gemini AI Live Audio" mode.', 'error');
+                    return;
+                }
                 if (event.error === 'not-allowed') {
-                    showToast('Microphone access blocked by browser.', 'error');
+                    showToast('Microphone access blocked by browser. Click the lock icon in the address bar to Allow.', 'error');
                     stopLiveTranscription();
                 }
             };
 
             recognition.onend = () => {
-                if (state.isLive) {
+                commitPendingInterim();
+                if (state.isLive && state.captureEngine === 'browser') {
                     // Alternate language if Auto KM/EN is enabled
                     if (state.recognitionLang === 'auto') {
                         state.autoLangToggle = state.autoLangToggle === 'km-KH' ? 'en-US' : 'km-KH';
@@ -870,18 +949,156 @@
                     } else {
                         recognition.lang = state.recognitionLang;
                     }
-                    try { recognition.start(); } catch (e) {}
+                    setTimeout(() => {
+                        if (state.isLive) {
+                            try { recognition.start(); } catch (e) {}
+                        }
+                    }, 120);
                 } else {
-                    document.getElementById('interim-bar').classList.add('hidden');
+                    interimBar.classList.add('hidden');
                 }
             };
 
             recognition.lang = state.recognitionLang === 'auto' ? state.autoLangToggle : state.recognitionLang;
-            recognition.start();
+            try {
+                recognition.start();
+            } catch (err) {
+                showToast(`Could not start speech recognition: ${err.message}`, 'error');
+                stopLiveTranscription();
+            }
+        }
+
+        // Gemini AI Live Audio Stream Mode: records 6-second rolling audio segments & transcribes
+        // Khmer + English + detects Speaker A/B/C changes automatically via Gemini multimodal audio
+        async function startGeminiLiveAudioCapture() {
+            const { apiKey, model, isConfigured } = getGeminiConfig();
+            if (!isConfigured) {
+                showToast('Add your free Google AI Studio key in "AI Engine" first.', 'error');
+                openApiSettingsModal();
+                return;
+            }
+
+            try {
+                state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                startWaveformVisualizer(state.micStream);
+            } catch (err) {
+                showToast('Microphone permission denied or unavailable.', 'error');
+                return;
+            }
+
+            state.isLive = true;
+            startMeetingTimer();
+            updateLiveButtonUI(true);
+
+            const interimBar = document.getElementById('interim-bar');
+            const interimEl = document.getElementById('interim-text');
+            interimBar.classList.remove('hidden');
+            updateInterimSpeakerTag();
+            interimEl.textContent = 'Gemini AI Live Audio listening (transcribes every 6 seconds)...';
+
+            const recordAndSendSlice = () => {
+                if (!state.isLive || !state.micStream) return;
+                const chunks = [];
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+
+                const recorder = mimeType ? new MediaRecorder(state.micStream, { mimeType }) : new MediaRecorder(state.micStream);
+                state.geminiChunkRecorder = recorder;
+
+                recorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) chunks.push(e.data);
+                };
+
+                recorder.onstop = async () => {
+                    if (chunks.length === 0) return;
+                    const cleanMime = (recorder.mimeType || 'audio/webm').split(';')[0];
+                    const blob = new Blob(chunks, { type: cleanMime });
+                    if (blob.size < 1200) return; // skip tiny silent blobs
+
+                    try {
+                        if (interimEl && state.isLive) {
+                            interimEl.textContent = 'Transcribing Khmer & English speech with Gemini AI...';
+                        }
+                        const base64Audio = await blobToBase64(blob);
+                        const langHint = state.recognitionLang === 'km-KH'
+                            ? 'Primary language is Khmer (ភាសាខ្មែរ).'
+                            : (state.recognitionLang === 'en-US' ? 'Primary language is English.' : 'Speech may be in Khmer (ភាសាខ្មែរ), English, or mixed.');
+
+                        const prompt = `Listen to this meeting audio clip. ${langHint}
+If there is only silence or background noise with no speech, reply with exactly: SILENCE
+Otherwise, transcribe what is spoken verbatim in its original script (Khmer script for Khmer, English for English). If multiple speakers speak in this clip, separate their turns on new lines starting with [Speaker A]: or [Speaker B]: based on voice differences. Output ONLY the transcript lines, nothing else.`;
+
+                        const { data } = await callGeminiWithFallback(apiKey, model, {
+                            contents: [{
+                                parts: [
+                                    { text: prompt },
+                                    { inline_data: { mime_type: cleanMime, data: base64Audio } }
+                                ]
+                            }]
+                        });
+
+                        const reply = (data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n') || '').trim();
+                        if (reply && reply !== 'SILENCE' && !/^SILENCE\.?$/i.test(reply)) {
+                            const lines = reply.split('\n').map(l => l.trim()).filter(Boolean);
+                            lines.forEach((line, idx) => {
+                                const speakerMatch = line.match(/^\[(Speaker [A-Z])\]:\s*(.+)$/i);
+                                if (speakerMatch) {
+                                    const detectedSp = speakerMatch[1].replace(/^speaker/i, 'Speaker');
+                                    if (!state.speakers.some(s => s.id === detectedSp)) {
+                                        state.speakers.push({ id: detectedSp, alias: '', colorIdx: state.speakers.length });
+                                    }
+                                    selectActiveSpeaker(detectedSp);
+                                    const cleanText = speakerMatch[2].trim();
+                                    addTranscriptSegment({
+                                        type: 'text',
+                                        speakerId: detectedSp,
+                                        lang: detectKhmerOrEnglish(cleanText),
+                                        text: cleanText
+                                    });
+                                } else {
+                                    if (idx > 0) cycleNextSpeakerTurn();
+                                    addTranscriptSegment({
+                                        type: 'text',
+                                        speakerId: state.activeSpeakerId,
+                                        lang: detectKhmerOrEnglish(line),
+                                        text: line
+                                    });
+                                }
+                            });
+                        }
+                        if (interimEl && state.isLive) {
+                            interimEl.textContent = 'Gemini AI Live Audio listening...';
+                        }
+                    } catch (err) {
+                        if (interimEl && state.isLive) {
+                            interimEl.textContent = `Listening... (${err.message})`;
+                        }
+                    }
+                };
+
+                recorder.start();
+                setTimeout(() => {
+                    if (recorder.state === 'recording') {
+                        try { recorder.stop(); } catch (e) {}
+                    }
+                }, 6000);
+            };
+
+            recordAndSendSlice();
+            state.geminiChunkInterval = setInterval(recordAndSendSlice, 6200);
         }
 
         function stopLiveTranscription() {
+            commitPendingInterim();
             state.isLive = false;
+            if (state.geminiChunkInterval) {
+                clearInterval(state.geminiChunkInterval);
+                state.geminiChunkInterval = null;
+            }
+            if (state.geminiChunkRecorder && state.geminiChunkRecorder.state === 'recording') {
+                try { state.geminiChunkRecorder.stop(); } catch (e) {}
+            }
             if (state.recognition) {
                 try { state.recognition.stop(); } catch (e) {}
                 state.recognition = null;
@@ -1614,6 +1831,35 @@ ${extractedActions.join('\n')}
         // =========================================================================
         // 8. AUDIO WAVEFORM VISUALIZER, TIMER & EXPORT HELPERS
         // =========================================================================
+        function startSimulatedSpeechPulse() {
+            const canvas = document.getElementById('audio-visualizer');
+            const placeholder = document.getElementById('visualizer-placeholder');
+            if (placeholder) placeholder.classList.add('hidden');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let phase = 0;
+
+            function drawPulse() {
+                if (!state.isLive || state.micStream) return;
+                state.animationFrameId = requestAnimationFrame(drawPulse);
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const bars = 48;
+                const barWidth = canvas.width / bars;
+                phase += 0.08;
+                for (let i = 0; i < bars; i++) {
+                    const amp = Math.abs(Math.sin(phase + i * 0.35)) * 0.65 + 0.1;
+                    const barHeight = amp * (canvas.height * 0.75);
+                    ctx.fillStyle = '#6366f1';
+                    ctx.fillRect(i * barWidth + 2, (canvas.height - barHeight) / 2, Math.max(barWidth - 4, 2), barHeight);
+                }
+            }
+            drawPulse();
+        }
+
         function initWaveformIdle() {
             const canvas = document.getElementById('audio-visualizer');
             if (!canvas) return;
