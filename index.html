@@ -375,8 +375,9 @@
                     <label class="block text-xs font-semibold text-slate-700 mb-1">Gemini Model (Free Tier Supported)</label>
                     <select id="gemini-model-select"
                         class="w-full text-xs sm:text-sm bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2.5 outline-none">
-                        <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recommended — Fast Multimodal Audio & MoM)</option>
-                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Ultra-Light Free Tier)</option>
+                        <option value="gemini-3.8-flash">Gemini 3.8 Flash (Auto-Fallback if Busy)</option>
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (High Availability Free Tier)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Stable Free Tier)</option>
                     </select>
                 </div>
 
@@ -503,6 +504,56 @@
             return { apiKey, model, isConfigured: apiKey.length > 10 };
         }
 
+        // Resilient Gemini API caller with automatic retry & fallback across free-tier models
+        async function callGeminiWithFallback(apiKey, preferredModel, requestPayload) {
+            const candidateModels = Array.from(new Set([
+                preferredModel,
+                'gemini-3.5-flash-lite',
+                'gemini-2.5-flash',
+                'gemini-3.8-flash'
+            ]));
+
+            let lastError = null;
+
+            for (const modelName of candidateModels) {
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestPayload)
+                        });
+
+                        const data = await response.json();
+                        if (response.ok) {
+                            return { data, usedModel: modelName };
+                        }
+
+                        const errMsg = data?.error?.message || `HTTP ${response.status}`;
+                        lastError = new Error(errMsg);
+
+                        // Invalid API key — stop immediately, do not retry other models
+                        if (response.status === 400 || response.status === 401 || response.status === 403 || /api key/i.test(errMsg)) {
+                            throw lastError;
+                        }
+
+                        // High demand (503) or rate limit (429): short backoff then try fallback model
+                        if (response.status === 503 || response.status === 429 || /high demand|overloaded|unavailable/i.test(errMsg)) {
+                            await new Promise(r => setTimeout(r, 700));
+                            break; // move immediately to next candidate model
+                        }
+                    } catch (err) {
+                        lastError = err;
+                        if (/api key/i.test(err.message)) throw err;
+                    }
+                }
+            }
+
+            throw lastError || new Error('All Gemini models are temporarily busy. Please try again in a moment.');
+        }
+
         function updateAiEngineStatusUI() {
             const { isConfigured, model } = getGeminiConfig();
             const btn = document.getElementById('btn-ai-settings');
@@ -510,10 +561,16 @@
             const label = document.getElementById('ai-status-label');
             const reportPill = document.getElementById('report-engine-pill');
 
+            const shortModelNames = {
+                'gemini-3.8-flash': 'Gemini 3.8 Flash',
+                'gemini-3.5-flash-lite': 'Gemini 3.5 Lite',
+                'gemini-2.5-flash': 'Gemini 2.5 Flash'
+            };
+
             if (isConfigured) {
                 btn.className = 'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200';
                 dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
-                label.textContent = `AI Engine: ${model === 'gemini-3.5-flash-lite' ? 'Gemini 3.5 Lite' : 'Gemini 3.8 Flash'}`;
+                label.textContent = `AI Engine: ${shortModelNames[model] || model}`;
                 if (reportPill) {
                     reportPill.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200';
                     reportPill.textContent = 'Gemini AI Enabled';
@@ -595,22 +652,16 @@
             feedback.classList.add('hidden');
 
             try {
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelVal)}:generateContent?key=${encodeURIComponent(keyVal)}`;
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: 'Reply with exactly: OK' }] }]
-                    })
+                const { usedModel } = await callGeminiWithFallback(keyVal, modelVal, {
+                    contents: [{ parts: [{ text: 'Reply with exactly: OK' }] }]
                 });
 
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data?.error?.message || `HTTP ${response.status}`);
+                if (usedModel !== modelVal) {
+                    document.getElementById('gemini-model-select').value = usedModel;
                 }
 
                 feedback.className = 'text-xs p-2.5 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-800';
-                feedback.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i><strong>Connected!</strong> Your free Google AI Studio key works with <code>${escapeHtml(modelVal)}</code>.`;
+                feedback.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i><strong>Connected!</strong> Your API key is active using <code>${escapeHtml(usedModel)}</code>${usedModel !== modelVal ? ' (auto-switched because primary model had high demand)' : ''}.`;
                 feedback.classList.remove('hidden');
             } catch (err) {
                 feedback.className = 'text-xs p-2.5 rounded-xl border bg-rose-50 border-rose-200 text-rose-800';
@@ -1012,29 +1063,19 @@
 
                     const prompt = `${langInstruction} Transcribe what is spoken in this meeting audio clip and provide an accurate, natural English translation. Format clearly as:\n[Detected Language: <Language>]\nOriginal: "<original transcript>"\nEnglish Translation: "<clear English translation>"`;
 
-                    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [
-                                    { text: prompt },
-                                    {
-                                        inline_data: {
-                                            mime_type: seg.audioMimeType || 'audio/webm',
-                                            data: base64Audio
-                                        }
+                    const { data, usedModel } = await callGeminiWithFallback(apiKey, model, {
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inline_data: {
+                                        mime_type: seg.audioMimeType || 'audio/webm',
+                                        data: base64Audio
                                     }
-                                ]
-                            }]
-                        })
+                                }
+                            ]
+                        }]
                     });
-
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data?.error?.message || `API Error (${response.status})`);
-                    }
 
                     const aiReply = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n').trim();
                     if (!aiReply) throw new Error('No translation returned by Gemini.');
@@ -1042,7 +1083,7 @@
                     seg.detectedLanguage = chosenLang;
                     seg.translation = aiReply;
                     renderTranscriptFeed();
-                    showToast('Voice clip transcribed & translated to English via Gemini!', 'success');
+                    showToast(`Voice clip translated to English via ${usedModel}!`, 'success');
                 } catch (err) {
                     if (btn) {
                         btn.disabled = false;
@@ -1322,28 +1363,18 @@ ${customPrompt ? `\nUser's Custom Report Requirements (MUST FOLLOW):\n${customPr
 Transcript:
 ${transcriptLog}`;
 
-                    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: systemPrompt }] }]
-                        })
+                    const { data, usedModel } = await callGeminiWithFallback(apiKey, model, {
+                        contents: [{ parts: [{ text: systemPrompt }] }]
                     });
-
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data?.error?.message || `API Error (${response.status})`);
-                    }
 
                     const aiMarkdown = data?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n').trim();
                     if (!aiMarkdown) throw new Error('Empty response received from Gemini.');
 
                     state.latestMinutesMarkdown = aiMarkdown;
                     renderMarkdownMinutes(aiMarkdown);
-                    sourceBadge.textContent = `${model}`;
+                    sourceBadge.textContent = usedModel;
                     sourceBadge.classList.remove('hidden');
-                    showToast('AI Minutes of Meeting generated with Gemini!', 'success');
+                    showToast(`AI Minutes of Meeting generated via ${usedModel}!`, 'success');
                 } catch (err) {
                     showToast(`Gemini API error (${err.message}). Falling back to local report generator.`, 'error');
                     const fallbackMd = buildLocalStructuredMinutes({ title, locationStr, chairStr, preset, customPrompt, dateStr, durationStr, attendees });
